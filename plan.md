@@ -1,0 +1,1 @@
+I want to build a simple desktop app for cv management to help me track what jobs I applied to, with what CV I applied to them with and help me quickly and easily tailor my CV by choosing from premade scetions to fill a given CV with. It should also integrate a safari extensions for automatically tracking what jobs I applied to.

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "CV Manager Capture",
+  "version": "0.1.0",
+  "description": "Send the current job posting to CV Manager on this Mac.",
+  "action": {
+    "default_title": "Capture job application",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "storage", "tabs"]
+}
