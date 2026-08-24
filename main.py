@@ -9,11 +9,11 @@ from pathlib import Path
 from PySide6.QtCore import QDate, QStandardPaths, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
+    QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QFileDialog, QPlainTextEdit, QStackedWidget, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from cv_export import export_cv, render_markdown
@@ -30,6 +30,7 @@ APP_STYLESHEET = """
     QListWidget::item:selected { background: #1d4ed8; color: white; font-weight: 600; }
     QListWidget::item:hover { background: #243b53; }
     QTableWidget { background: white; alternate-background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; gridline-color: #edf2f7; selection-background-color: #dbeafe; selection-color: #0f172a; }
+    QTreeWidget { background: white; border: 1px solid #e2e8f0; border-radius: 10px; selection-background-color: #dbeafe; selection-color: #0f172a; }
     QHeaderView::section { background: #f1f5f9; color: #475569; border: 0; border-bottom: 1px solid #e2e8f0; padding: 9px; font-weight: 600; }
     QPushButton { background: #1d4ed8; color: white; border: 0; border-radius: 7px; padding: 8px 13px; font-weight: 600; }
     QPushButton:hover { background: #1e40af; }
@@ -41,6 +42,20 @@ APP_STYLESHEET = """
     QLabel[muted="true"] { color: #64748b; }
     QFrame[card="true"] { background: white; border: 1px solid #e2e8f0; border-radius: 12px; }
 """
+
+TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
+TREE_DATA_ROLE = TREE_KIND_ROLE + 1
+
+
+class TreeEditDelegate(QStyledItemDelegate):
+    """Allow editing only the tree cells that are persisted."""
+
+    def createEditor(self, parent, option, index):
+        kind = index.siblingAtColumn(0).data(TREE_KIND_ROLE)
+        editable_columns = {"cv": {1}, "profile_field": {1}, "section": {0, 1}, "content": {1}}
+        if index.column() not in editable_columns.get(kind, set()):
+            return None
+        return super().createEditor(parent, option, index)
 
 
 def app_data_dir() -> Path:
@@ -91,7 +106,7 @@ class ProfileDialog(QDialog):
 
 
 class SectionDialog(QDialog):
-    def __init__(self, section: Section | None = None, parent=None):
+    def __init__(self, section: Section | None = None, parent=None, show_labels: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Edit section" if section else "New section")
         self.resize(660, 520)
@@ -102,15 +117,20 @@ class SectionDialog(QDialog):
         self.category = QComboBox(); self.category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"])
         if section:
             self.category.setCurrentText(section.category)
-        form.addRow("Section title", self.title); form.addRow("Category", self.category); layout.addLayout(form)
+        self.labels = QLineEdit(section.labels if section else "")
+        self.labels.setPlaceholderText("e.g. backend, data engineering, fintech")
+        form.addRow("Section title", self.title); form.addRow("Category", self.category)
+        if show_labels:
+            form.addRow("Job labels", self.labels)
+        layout.addLayout(form)
         self.content = QPlainTextEdit(section.content if section else "")
         self.content.setPlaceholderText("Example:\n**Data Engineering Intern** :: *May 2026 - Present*\n*Example Company* :: *Montreal, QC*\n- Built reliable data pipelines...\n- Improved reporting...")
         layout.addWidget(self.content, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
 
-    def values(self) -> tuple[str, str, str]:
-        return self.title.text().strip(), self.category.currentText(), self.content.toPlainText().strip()
+    def values(self) -> tuple[str, str, str, str]:
+        return self.title.text().strip(), self.category.currentText(), self.content.toPlainText().strip(), self.labels.text().strip()
 
     def accept(self) -> None:
         if not self.title.text().strip() or not self.content.toPlainText().strip():
@@ -191,20 +211,31 @@ class ApplicationDialog(QDialog):
 
 
 class CVDialog(QDialog):
-    def __init__(self, sections: list[Section], profile: dict[str, str], parent=None):
+    def __init__(self, sections: list[Section], profile: dict[str, str], cv=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Build tailored CV")
+        self.setWindowTitle("Edit CV" if cv else "Build tailored CV")
         self.resize(840, 540)
         outer = QVBoxLayout(self)
-        outer.addWidget(title("Build tailored CV", f"This CV will snapshot {profile['name']}'s current details and selected sections."))
-        form = QFormLayout(); self.name = QLineEdit(); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name); outer.addLayout(form)
+        explanation = (
+            "Change the saved name, wording, sections, or order. Editing wording here detaches that block from future library updates."
+            if cv else f"This CV will snapshot {profile['name']}'s current details and selected sections."
+        )
+        outer.addWidget(title(self.windowTitle(), explanation))
+        form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name); outer.addLayout(form)
         body = QHBoxLayout(); outer.addLayout(body, 1)
         self.available = QListWidget(); self.available.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         for section in sections:
-            item = QListWidgetItem(f"{section.category}  ·  {section.title}"); item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
+            labels = f"  ·  {section.labels}" if section.labels else ""
+            item = QListWidgetItem(f"{section.category}  ·  {section.title}{labels}"); item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
         self.selected = QListWidget()
+        if cv:
+            for section in cv.sections:
+                item = QListWidgetItem(f"{section.get('category', 'Other')}  ·  {section.get('title', 'Untitled')}")
+                item.setData(Qt.ItemDataRole.UserRole, dict(section))
+                self.selected.addItem(item)
+        self.selected.itemDoubleClicked.connect(lambda _: self.edit_selected_section())
         controls = QVBoxLayout()
-        for text, action in [("Add →", self.add_sections), ("← Remove", self.remove_sections), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
+        for text, action in [("Add →", self.add_sections), ("← Remove", self.remove_sections), ("Edit content", self.edit_selected_section), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
             button = secondary_button(text); button.clicked.connect(action); controls.addWidget(button)
         controls.addStretch()
         body.addWidget(self.available, 1); body.addLayout(controls); body.addWidget(self.selected, 1)
@@ -212,22 +243,43 @@ class CVDialog(QDialog):
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); outer.addWidget(buttons)
 
     def add_sections(self) -> None:
-        selected_ids = {self.selected.item(i).data(Qt.ItemDataRole.UserRole).id for i in range(self.selected.count())}
+        selected_library_ids = {
+            value.id for value in (self.selected.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.selected.count()))
+            if isinstance(value, Section)
+        }
         for item in self.available.selectedItems():
             section = item.data(Qt.ItemDataRole.UserRole)
-            if section.id not in selected_ids:
+            if section.id not in selected_library_ids:
                 clone = QListWidgetItem(item.text()); clone.setData(Qt.ItemDataRole.UserRole, section); self.selected.addItem(clone)
+                selected_library_ids.add(section.id)
 
     def remove_sections(self) -> None:
         for item in self.selected.selectedItems():
             self.selected.takeItem(self.selected.row(item))
+
+    def edit_selected_section(self) -> None:
+        item = self.selected.currentItem()
+        if not item:
+            QMessageBox.information(self, "Select CV content", "Select a section from the right-hand list to edit its content for this CV.")
+            return
+        value = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(value, Section):
+            section = value
+        else:
+            section = Section(0, value.get("title", ""), value.get("category", "Other"), value.get("content", ""), 0)
+        dialog = SectionDialog(section, self, show_labels=False)
+        dialog.setWindowTitle("Edit CV section")
+        if dialog.exec():
+            section_title, category, content, _ = dialog.values()
+            item.setText(f"{category}  ·  {section_title}")
+            item.setData(Qt.ItemDataRole.UserRole, {"title": section_title, "category": category, "content": content})
 
     def move(self, offset: int) -> None:
         row = self.selected.currentRow(); target = row + offset
         if 0 <= row < self.selected.count() and 0 <= target < self.selected.count():
             item = self.selected.takeItem(row); self.selected.insertItem(target, item); self.selected.setCurrentRow(target)
 
-    def chosen_sections(self) -> list[Section]:
+    def chosen_sections(self) -> list[Section | dict]:
         return [self.selected.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.selected.count())]
 
     def accept(self) -> None:
@@ -250,9 +302,9 @@ class MainWindow(QMainWindow):
         self.capture_received.connect(self.receive_capture)
 
         self.nav = QListWidget(); self.nav.setFixedWidth(205)
-        self.nav.addItems(["Overview", "Applications", "CVs", "Section Library", "Personal Details", "Safari Capture"])
+        self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Capture"])
         self.pages = QStackedWidget()
-        for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.sections_page(), self.profile_page(), self.capture_page()):
+        for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.tree_page(), self.sections_page(), self.profile_page(), self.capture_page()):
             self.pages.addWidget(page)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         shell = QWidget(); layout = QHBoxLayout(shell); layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(18); layout.addWidget(self.nav); layout.addWidget(self.pages, 1); self.setCentralWidget(shell)
@@ -265,6 +317,16 @@ class MainWindow(QMainWindow):
 
     def table(self, headers: list[str]) -> QTableWidget:
         table = QTableWidget(0, len(headers)); table.setHorizontalHeaderLabels(headers); table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers); table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows); table.setAlternatingRowColors(True); table.setSortingEnabled(False); table.horizontalHeader().setStretchLastSection(True); table.verticalHeader().hide(); return table
+
+    def detail_card(self, fields: list[tuple[str, str]]) -> tuple[QFrame, dict[str, QLabel]]:
+        card = QFrame(); card.setProperty("card", True)
+        form = QFormLayout(card); form.setContentsMargins(18, 14, 18, 14)
+        labels = {}
+        for key, caption in fields:
+            value = QLabel("—"); value.setWordWrap(True); value.setTextFormat(Qt.TextFormat.PlainText)
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            labels[key] = value; form.addRow(caption, value)
+        return card, labels
 
     def overview_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(14)
@@ -279,21 +341,213 @@ class MainWindow(QMainWindow):
 
     def applications_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Applications", "Search, update status, and preserve the submitted CV.")); header.addStretch(); add = QPushButton("Add application"); edit = secondary_button("Edit"); open_posting = secondary_button("Open posting"); export_csv = secondary_button("Export CSV"); delete = secondary_button("Delete"); delete.setProperty("danger", True); add.clicked.connect(self.new_application); edit.clicked.connect(self.edit_application); open_posting.clicked.connect(self.open_selected_posting); export_csv.clicked.connect(self.export_applications_csv); delete.clicked.connect(self.delete_application); header.addWidget(add); header.addWidget(edit); header.addWidget(open_posting); header.addWidget(export_csv); header.addWidget(delete); layout.addLayout(header)
+        header = QHBoxLayout(); header.addWidget(title("Applications", "Search every saved field, update progress, and review the exact CV, posting, and notes for each submission.")); header.addStretch(); add = QPushButton("Add application"); edit = secondary_button("Edit"); open_posting = secondary_button("Open posting"); export_csv = secondary_button("Export CSV"); delete = secondary_button("Delete"); delete.setProperty("danger", True); add.clicked.connect(self.new_application); edit.clicked.connect(self.edit_application); open_posting.clicked.connect(self.open_selected_posting); export_csv.clicked.connect(self.export_applications_csv); delete.clicked.connect(self.delete_application); header.addWidget(add); header.addWidget(edit); header.addWidget(open_posting); header.addWidget(export_csv); header.addWidget(delete); layout.addLayout(header)
         self.application_search = QLineEdit(); self.application_search.setPlaceholderText("Search company, role, location, or status…"); self.application_search.textChanged.connect(self.refresh_applications); layout.addWidget(self.application_search)
-        self.application_table = self.table(["Company", "Role", "Location", "Applied", "Status", "CV used"]); self.application_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.application_table.itemDoubleClicked.connect(lambda _: self.edit_application()); layout.addWidget(self.application_table, 1)
+        self.application_table = self.table(["Company", "Role", "Location", "Applied", "Status", "CV used"]); self.application_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.application_table.itemDoubleClicked.connect(lambda _: self.edit_application()); self.application_table.itemSelectionChanged.connect(self.refresh_application_details); layout.addWidget(self.application_table, 1)
+        application_card, self.application_detail_labels = self.detail_card([
+            ("job", "Selected job"), ("timeline", "Application"), ("cv", "CV snapshot"),
+            ("posting", "Job posting"), ("notes", "Notes"),
+        ])
+        layout.addWidget(application_card)
         return page
 
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Each CV is a locked snapshot that can be safely linked to an application.")); header.addStretch(); new = QPushButton("Build CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
-        self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.open_selected_pdf()); layout.addWidget(self.cv_table, 1)
+        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Every CV keeps its own contact details and section content, so submitted versions stay reproducible.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
+        self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); layout.addWidget(self.cv_table, 1)
+        cv_card, self.cv_detail_labels = self.detail_card([
+            ("identity", "Snapshot"), ("contact", "Contact details"), ("sections", "Section order"),
+            ("applications", "Linked applications"), ("exports", "Export files"),
+        ])
+        layout.addWidget(cv_card)
         return page
+
+    def tree_page(self) -> QWidget:
+        page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
+        header = QHBoxLayout()
+        header.addWidget(title("CV tree", "Edit a CV as a hierarchy: CV → sections → lines and bullet points."))
+        header.addStretch()
+        self.tree_cv_picker = QComboBox(); self.tree_cv_picker.setMinimumWidth(240)
+        self.tree_cv_picker.currentIndexChanged.connect(self.load_cv_tree)
+        header.addWidget(QLabel("CV")); header.addWidget(self.tree_cv_picker)
+        layout.addLayout(header)
+
+        self.cv_tree = QTreeWidget()
+        self.cv_tree.setColumnCount(3); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Job labels"])
+        self.cv_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
+        self.cv_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.cv_tree.setItemDelegate(TreeEditDelegate(self.cv_tree))
+        self.cv_tree.header().setStretchLastSection(True)
+        layout.addWidget(self.cv_tree, 1)
+
+        actions = QHBoxLayout()
+        for text, action, primary in [
+            ("Add section", self.add_tree_section, False),
+            ("Add bullet", lambda: self.add_tree_content("- New bullet point"), False),
+            ("Add line", lambda: self.add_tree_content("New line"), False),
+            ("Remove", self.remove_tree_node, False),
+            ("Move up", lambda: self.move_tree_node(-1), False),
+            ("Move down", lambda: self.move_tree_node(1), False),
+            ("Save & export", self.save_cv_tree, True),
+        ]:
+            button = QPushButton(text) if primary else secondary_button(text)
+            button.clicked.connect(action); actions.addWidget(button)
+        actions.addStretch(); layout.addLayout(actions)
+        hint = QLabel("Double-click a value to edit it. Job labels come from linked library sections and are read-only here. Markdown is preserved, including **bold**, *italic*, links, and the leading - on bullets.")
+        hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
+        return page
+
+    @staticmethod
+    def tree_item(kind: str, node: str, value: str = "", data=None, editable: bool = True, labels: str = "") -> QTreeWidgetItem:
+        item = QTreeWidgetItem([node, value, labels])
+        item.setData(0, TREE_KIND_ROLE, kind); item.setData(0, TREE_DATA_ROLE, data)
+        if editable:
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        return item
+
+    @staticmethod
+    def content_node_label(line: str) -> str:
+        if line.startswith(("- ", "* ")):
+            return "Bullet"
+        if " :: " in line:
+            return "Entry"
+        if not line:
+            return "Spacing"
+        return "Line"
+
+    def refresh_tree_picker(self, cvs: list) -> None:
+        if not hasattr(self, "tree_cv_picker"):
+            return
+        selected_id = self.tree_cv_picker.currentData()
+        self.tree_cv_picker.blockSignals(True); self.tree_cv_picker.clear()
+        if cvs:
+            for cv in cvs:
+                self.tree_cv_picker.addItem(cv.name, cv.id)
+            index = self.tree_cv_picker.findData(selected_id)
+            self.tree_cv_picker.setCurrentIndex(index if index >= 0 else 0)
+        else:
+            self.tree_cv_picker.addItem("No saved CVs", None)
+        self.tree_cv_picker.blockSignals(False)
+        self.load_cv_tree()
+
+    def load_cv_tree(self) -> None:
+        if not hasattr(self, "cv_tree"):
+            return
+        self.cv_tree.clear()
+        cv_id = self.tree_cv_picker.currentData()
+        cv = self.db.get_cv(cv_id) if cv_id else None
+        if not cv:
+            placeholder = self.tree_item("placeholder", "Build a CV to customize it here", editable=False)
+            self.cv_tree.addTopLevelItem(placeholder)
+            return
+
+        root = self.tree_item("cv", "CV", cv.name)
+        self.cv_tree.addTopLevelItem(root)
+        profile = self.tree_item("profile", "Personal details", editable=False)
+        root.addChild(profile)
+        profile_labels = {"name": "Name", "phone": "Phone", "email": "Email", "github": "GitHub", "website": "Website"}
+        for key, label in profile_labels.items():
+            profile.addChild(self.tree_item("profile_field", label, cv.profile.get(key, ""), key))
+        library_labels = {section.id: section.labels for section in self.db.list_sections()}
+        for section in cv.sections:
+            section_item = self.tree_item(
+                "section",
+                section.get("title", "Untitled"),
+                section.get("category", "Other"),
+                dict(section),
+                labels=library_labels.get(section.get("source_section_id"), ""),
+            )
+            root.addChild(section_item)
+            for line in section.get("content", "").splitlines():
+                section_item.addChild(self.tree_item("content", self.content_node_label(line), line))
+        root.setExpanded(True); profile.setExpanded(True)
+        for index in range(root.childCount()):
+            root.child(index).setExpanded(True)
+        self.cv_tree.resizeColumnToContents(0); self.cv_tree.resizeColumnToContents(1); self.cv_tree.setCurrentItem(root)
+
+    def add_tree_section(self) -> None:
+        root = self.cv_tree.topLevelItem(0) if self.cv_tree.topLevelItemCount() else None
+        if not root or root.data(0, TREE_KIND_ROLE) != "cv":
+            QMessageBox.information(self, "No CV selected", "Build or select a CV before adding a section.")
+            return
+        section = self.tree_item("section", "New section", "Other", {})
+        section.addChild(self.tree_item("content", "Bullet", "- New bullet point"))
+        root.addChild(section); root.setExpanded(True); section.setExpanded(True)
+        self.cv_tree.setCurrentItem(section); self.cv_tree.editItem(section, 0)
+
+    def add_tree_content(self, line: str) -> None:
+        item = self.cv_tree.currentItem()
+        if item and item.data(0, TREE_KIND_ROLE) == "content":
+            item = item.parent()
+        if not item or item.data(0, TREE_KIND_ROLE) != "section":
+            QMessageBox.information(self, "Select a section", "Select a section or one of its content nodes first.")
+            return
+        content = self.tree_item("content", self.content_node_label(line), line)
+        item.addChild(content); item.setExpanded(True); self.cv_tree.setCurrentItem(content); self.cv_tree.editItem(content, 1)
+
+    def remove_tree_node(self) -> None:
+        item = self.cv_tree.currentItem()
+        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "content"}:
+            QMessageBox.information(self, "Select content", "Only sections, lines, and bullet points can be removed.")
+            return
+        parent = item.parent()
+        parent.takeChild(parent.indexOfChild(item))
+
+    def move_tree_node(self, offset: int) -> None:
+        item = self.cv_tree.currentItem()
+        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "content"}:
+            return
+        parent = item.parent(); row = parent.indexOfChild(item); target = row + offset
+        if 0 <= target < parent.childCount() and parent.child(target).data(0, TREE_KIND_ROLE) == item.data(0, TREE_KIND_ROLE):
+            parent.takeChild(row); parent.insertChild(target, item); self.cv_tree.setCurrentItem(item)
+
+    def tree_values(self) -> tuple[str, list[dict], dict[str, str]]:
+        root = self.cv_tree.topLevelItem(0)
+        name = root.text(1).strip()
+        profile = {}
+        sections = []
+        for index in range(root.childCount()):
+            item = root.child(index); kind = item.data(0, TREE_KIND_ROLE)
+            if kind == "profile":
+                for field_index in range(item.childCount()):
+                    field = item.child(field_index)
+                    profile[field.data(0, TREE_DATA_ROLE)] = field.text(1).strip()
+            elif kind == "section":
+                content = "\n".join(item.child(line).text(1) for line in range(item.childCount())).strip()
+                section = {"title": item.text(0).strip(), "category": item.text(1).strip() or "Other", "content": content}
+                original = item.data(0, TREE_DATA_ROLE) or {}
+                if original.get("source_section_id") is not None and all(section[key] == original.get(key, "") for key in ("title", "category", "content")):
+                    section["source_section_id"] = original["source_section_id"]
+                sections.append(section)
+        return name, sections, profile
+
+    def save_cv_tree(self) -> None:
+        cv_id = self.tree_cv_picker.currentData()
+        if not cv_id:
+            QMessageBox.information(self, "No CV selected", "Build or select a CV before saving.")
+            return
+        name, sections, profile = self.tree_values()
+        if not name or not sections or any(not section["title"] or not section["content"] for section in sections):
+            QMessageBox.warning(self, "Incomplete CV", "A CV needs a name and at least one titled section with content.")
+            return
+        updated = self.db.update_cv(cv_id, name, sections, profile)
+        try:
+            markdown_path, pdf_path = export_cv(updated, self.data_dir / "exports")
+            self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
+            message = f'Saved and exported CV: {updated.name}'
+        except Exception as error:
+            message = f'Saved CV, but export failed: {error}'
+            QMessageBox.warning(self, "CV saved, export failed", message)
+        self.refresh_all(); self.statusBar().showMessage(message, 6000)
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout(); header.addWidget(title("Section library", "Compose each CV from reusable, tailored content blocks.")); header.addStretch(); importer = secondary_button("Import CV…"); add = QPushButton("New section"); edit = secondary_button("Edit"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); edit.clicked.connect(self.edit_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(edit); header.addWidget(delete); layout.addLayout(header)
-        self.section_table = self.table(["Title", "Category", "Content preview"]); self.section_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.section_table.itemDoubleClicked.connect(lambda _: self.edit_section()); layout.addWidget(self.section_table, 1)
+        self.section_table = self.table(["Title", "Category", "Job labels", "Words", "Content preview"]); self.section_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.section_table.itemDoubleClicked.connect(lambda _: self.edit_section()); self.section_table.itemSelectionChanged.connect(self.refresh_section_details); layout.addWidget(self.section_table, 1)
+        section_card, self.section_detail_labels = self.detail_card([
+            ("identity", "Selected section"), ("labels", "Job labels"), ("content", "Full content"),
+        ])
+        layout.addWidget(section_card)
         return page
 
     def profile_page(self) -> QWidget:
@@ -333,9 +587,11 @@ class MainWindow(QMainWindow):
         self._applications = applications; self._cvs = cvs; self.refresh_applications()
         cv_names = {cv.id: cv.name for cv in cvs}
         self.fill_table(self.cv_table, cvs, lambda cv: [cv.name, cv.created_at[:10], len(cv.sections), "Ready" if cv.pdf_path else "Not exported"])
-        self.fill_table(self.section_table, sections, lambda s: [s.title, s.category, s.content.replace("\n", " ")[:100]])
+        self.refresh_tree_picker(cvs)
+        self.fill_table(self.section_table, sections, lambda s: [s.title, s.category, s.labels or "—", len(s.content.split()), s.content.replace("\n", " ")[:140]])
         profile = self.db.get_profile()
         for key, label in self.profile_labels.items(): label.setText(profile[key] or "—")
+        self.refresh_cv_details(); self.refresh_section_details()
         self.refresh_capture_status()
 
     def refresh_applications(self) -> None:
@@ -343,6 +599,60 @@ class MainWindow(QMainWindow):
         matches = [record for record in self._applications if needle in " ".join([record.company, record.role, record.location, record.status, record.notes, record.posting_url]).casefold()]
         cv_names = {cv.id: cv.name for cv in self._cvs}
         self.fill_table(self.application_table, matches, lambda a: [a.company, a.role, a.location or "—", a.application_date, a.status, cv_names.get(a.cv_id, "—")])
+        self.refresh_application_details()
+
+    def refresh_application_details(self) -> None:
+        if not hasattr(self, "application_detail_labels"):
+            return
+        application_id = self.selected_id(self.application_table)
+        application = self.db.get_application(application_id) if application_id else None
+        if not application:
+            values = {"job": "Select an application to see all of its details.", "timeline": "—", "cv": "—", "posting": "—", "notes": "—"}
+        else:
+            cv = self.db.get_cv(application.cv_id) if application.cv_id else None
+            values = {
+                "job": f"{application.role} at {application.company}" + (f" · {application.location}" if application.location else ""),
+                "timeline": f"Applied {application.application_date} · {application.status}",
+                "cv": cv.name if cv else "No CV linked",
+                "posting": application.posting_url or "No URL saved",
+                "notes": application.notes or "No notes saved",
+            }
+        for key, value in values.items(): self.application_detail_labels[key].setText(value)
+
+    def refresh_cv_details(self) -> None:
+        if not hasattr(self, "cv_detail_labels"):
+            return
+        cv_id = self.selected_id(self.cv_table)
+        cv = self.db.get_cv(cv_id) if cv_id else None
+        if not cv:
+            values = {"identity": "Select a CV to inspect its saved snapshot.", "contact": "—", "sections": "—", "applications": "—", "exports": "—"}
+        else:
+            contact = " · ".join(value for value in (cv.profile.get("phone"), cv.profile.get("email"), cv.profile.get("github"), cv.profile.get("website")) if value)
+            linked = [f"{item.role} at {item.company}" for item in self.db.list_applications() if item.cv_id == cv.id]
+            exports = " · ".join(path for path in (cv.markdown_path, cv.pdf_path) if path)
+            values = {
+                "identity": f"{cv.name} · created {cv.created_at.replace('T', ' ')} · {cv.profile.get('name', '')}",
+                "contact": contact or "No contact details saved",
+                "sections": " → ".join(section.get("title", "Untitled") for section in cv.sections),
+                "applications": ", ".join(linked) if linked else "Not linked to an application",
+                "exports": exports or "Not exported yet",
+            }
+        for key, value in values.items(): self.cv_detail_labels[key].setText(value)
+
+    def refresh_section_details(self) -> None:
+        if not hasattr(self, "section_detail_labels"):
+            return
+        section_id = self.selected_id(self.section_table)
+        section = self.db.get_section(section_id) if section_id else None
+        if section:
+            identity = f"{section.title} · {section.category} · {len(section.content.split())} words"
+            labels = section.labels or "No job labels"
+            content = section.content
+        else:
+            identity, labels, content = "Select a section to read its complete reusable content.", "—", "—"
+        self.section_detail_labels["identity"].setText(identity)
+        self.section_detail_labels["labels"].setText(labels)
+        self.section_detail_labels["content"].setText(content)
 
     @staticmethod
     def selected_id(table: QTableWidget) -> int | None:
@@ -380,14 +690,33 @@ class MainWindow(QMainWindow):
         if dialog.import_profile.isChecked():
             self.db.update_profile(self.db.get_profile() | result.profile)
         self.refresh_all()
-        self.nav.setCurrentRow(3)
+        self.nav.setCurrentRow(4)
         self.statusBar().showMessage(f"Imported {len(dialog.selected_sections())} CV section(s).", 6000)
 
     def edit_section(self) -> None:
         section_id = self.selected_id(self.section_table)
         if not section_id: QMessageBox.information(self, "Select a section", "Select a section to edit."); return
         dialog = SectionDialog(self.db.get_section(section_id), self)
-        if dialog.exec(): self.db.update_section(section_id, *dialog.values()); self.refresh_all()
+        if not dialog.exec():
+            return
+        affected_cv_ids = self.db.update_section(section_id, *dialog.values())
+        failed_exports = []
+        for cv_id in affected_cv_ids:
+            cv = self.db.get_cv(cv_id)
+            try:
+                markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
+                self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
+            except Exception as error:
+                failed_exports.append(f"{cv.name}: {error}")
+        self.refresh_all()
+        if failed_exports:
+            QMessageBox.warning(
+                self,
+                "Sections updated, some exports failed",
+                "The linked CV content was updated, but these exports need attention:\n\n" + "\n".join(failed_exports),
+            )
+        elif affected_cv_ids:
+            self.statusBar().showMessage(f"Updated this section in {len(affected_cv_ids)} linked CV(s) and regenerated their exports.", 6000)
 
     def delete_section(self) -> None:
         section_ids = self.selected_ids(self.section_table)
@@ -477,7 +806,7 @@ class MainWindow(QMainWindow):
     def new_cv(self) -> None:
         sections = self.db.list_sections()
         if not sections: QMessageBox.information(self, "Add content first", "Create at least one reusable section before building a CV."); return
-        profile = self.db.get_profile(); dialog = CVDialog(sections, profile, self)
+        profile = self.db.get_profile(); dialog = CVDialog(sections, profile, parent=self)
         if dialog.exec():
             cv = self.db.create_cv(dialog.name.text().strip(), dialog.chosen_sections(), profile)
             try:
@@ -487,6 +816,22 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "CV saved, export failed", f"The CV snapshot was saved but could not be exported:\n{error}")
             self.refresh_all()
 
+    def edit_cv(self) -> None:
+        cv = self.selected_cv()
+        if not cv:
+            return
+        dialog = CVDialog(self.db.list_sections(), cv.profile, cv=cv, parent=self)
+        if not dialog.exec():
+            return
+        updated = self.db.update_cv(cv.id, dialog.name.text().strip(), dialog.chosen_sections(), cv.profile)
+        try:
+            markdown_path, pdf_path = export_cv(updated, self.data_dir / "exports")
+            self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
+            self.statusBar().showMessage(f'Updated and exported CV: {updated.name}', 6000)
+        except Exception as error:
+            QMessageBox.warning(self, "CV updated, export failed", f"The CV snapshot was updated but could not be exported:\n{error}")
+        self.refresh_all()
+
     def selected_cv(self):
         cv_id = self.selected_id(self.cv_table)
         if not cv_id: QMessageBox.information(self, "Select a CV", "Select a CV first."); return None
@@ -495,7 +840,7 @@ class MainWindow(QMainWindow):
     def preview_cv(self) -> None:
         cv = self.selected_cv()
         if not cv: return
-        dialog = QDialog(self); dialog.setWindowTitle(cv.name); dialog.resize(760, 720); layout = QVBoxLayout(dialog); layout.addWidget(title(cv.name, "Immutable Markdown snapshot")); text = QPlainTextEdit(render_markdown(cv)); text.setReadOnly(True); layout.addWidget(text); dialog.exec()
+        dialog = QDialog(self); dialog.setWindowTitle(cv.name); dialog.resize(760, 720); layout = QVBoxLayout(dialog); layout.addWidget(title(cv.name, "Markdown generated from this CV's saved snapshot")); text = QPlainTextEdit(render_markdown(cv)); text.setReadOnly(True); layout.addWidget(text); dialog.exec()
 
     def delete_cv(self) -> None:
         cv_ids = self.selected_ids(self.cv_table)
@@ -526,7 +871,7 @@ class MainWindow(QMainWindow):
     def open_selected_pdf(self) -> None:
         cv = self.selected_cv()
         if cv and cv.pdf_path and Path(cv.pdf_path).exists(): QDesktopServices.openUrl(QUrl.fromLocalFile(cv.pdf_path))
-        elif cv: QMessageBox.information(self, "No PDF found", "The PDF export is not available. Recreate this CV to generate one.")
+        elif cv: QMessageBox.information(self, "No PDF found", "The PDF export is not available. Regenerate this CV to create one.")
 
     def open_export_folder(self) -> None:
         export_dir = self.data_dir / "exports"; export_dir.mkdir(exist_ok=True); QDesktopServices.openUrl(QUrl.fromLocalFile(str(export_dir)))

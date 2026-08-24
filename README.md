@@ -16,8 +16,16 @@ Use **Export full backup** in Personal Details to create a portable JSON copy of
 
 1. Update **Personal Details** once. These details are copied into each new CV.
 2. Build reusable blocks in **Section Library**.
-3. Create a tailored CV by selecting and ordering the blocks. The resulting sections and contact details are locked in that CV snapshot.
+3. Create a tailored CV by selecting and ordering the blocks. Add comma-separated job labels to library sections to note where each block fits; labels help with selection and are not exported. Contact details are snapshotted, while library-sourced sections stay linked to their reusable content.
 4. Track the application and link it to the exact CV sent.
+
+Saved CVs can be edited from **Tailored CVs**. Editing starts with the saved section content and order, lets you tailor wording without changing the reusable library, add current library sections, and regenerate the Markdown and PDF. Editing a section's wording inside a CV detaches that block from future library updates. The CV keeps its original contact-detail snapshot.
+
+Use **Tree View** when you want to customize the whole saved snapshot in one place. The CV is the root; personal details and sections sit beneath it; and each section owns its entry lines and bullet points. Double-click values to edit them, add or remove section content, reorder sibling sections or lines, then choose **Save & export**. Reordering a linked section preserves its library link, while changing that section's title, category, or content makes it CV-specific.
+
+Editing a section in **Section Library** updates every CV that still uses that library section and regenerates their Markdown and PDF exports. If updated content no longer fits legibly on one page, the CV remains updated and the app reports which export needs attention.
+
+Select any application, CV, or library section to see its complete details below the table, including notes and posting URLs, linked applications, saved contact information, export paths, and full section content.
 
 ### Import an existing CV
 

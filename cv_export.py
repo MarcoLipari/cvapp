@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import re
+from collections import Counter
 from pathlib import Path
 
 from database import CV, DEFAULT_PROFILE
@@ -68,18 +69,78 @@ def export_cv(cv: CV, output_dir: str | Path) -> tuple[Path, Path]:
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", cv.name).strip("-") or "cv"
     stem = f"{safe_name}-{cv.id}"
     markdown_path, pdf_path = output / f"{stem}.md", output / f"{stem}.pdf"
+    pending_pdf_path = output / f".{stem}.pending.pdf"
     profile = DEFAULT_PROFILE | cv.profile
     markdown = render_markdown(cv); markdown_path.write_text(markdown, encoding="utf-8")
-    writer = QPdfWriter(str(pdf_path))
+    writer = QPdfWriter(str(pending_pdf_path))
+    # Keep the file broadly compatible and make its purpose unambiguous to
+    # document-management systems before they inspect the page contents.
+    writer.setPdfVersion(QPdfWriter.PdfVersion.PdfVersion_1_4)
+    pdf_title = re.sub(r"[^A-Za-z0-9]+", "", profile["name"]) + "CV"
+    writer.setTitle(pdf_title)
     writer.setResolution(72)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))
     writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Point)
     painter = QPainter(writer)
-    _draw_reference_layout(painter, markdown, profile)
-    painter.end()
-    if not pdf_path.exists():
-        raise RuntimeError("Qt did not create the PDF")
+    try:
+        _draw_reference_layout(painter, markdown, profile)
+        painter.end()
+        if not pending_pdf_path.exists():
+            raise RuntimeError("Qt did not create the PDF")
+        _validate_ats_text_layer(pending_pdf_path, cv, profile)
+        pending_pdf_path.replace(pdf_path)
+    except Exception:
+        if painter.isActive():
+            painter.end()
+        pending_pdf_path.unlink(missing_ok=True)
+        raise
     return markdown_path, pdf_path
+
+
+def _plain_markdown(text: str) -> str:
+    """Return the words an ATS should see after the supported Markdown renders."""
+    text = re.sub(r"\[([^\]]+)]\(https?://[^)\s]+\)", r"\1", text)
+    return text.replace("**", "").replace("*", "").replace(" :: ", " ")
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[^\W_]+(?:['’][^\W_]+)?", text.casefold(), flags=re.UNICODE)
+
+
+def _validate_ats_text_layer(pdf_path: Path, cv: CV, profile: dict[str, str]) -> None:
+    """Refuse an export whose searchable text no longer represents the CV."""
+    from PySide6.QtPdf import QPdfDocument
+
+    document = QPdfDocument()
+    error = document.load(str(pdf_path))
+    if error != QPdfDocument.Error.None_ or document.pageCount() != 1:
+        raise RuntimeError("The exported PDF is not a readable one-page document")
+
+    extracted = document.getAllText(0).text()
+    normalized_extracted = " ".join(_tokens(extracted))
+    required_fields = [profile["name"]]
+    required_fields.extend(value for value in profile.values() if value)
+    required_fields.extend(section["title"] for section in cv.sections if section.get("title"))
+    missing = [
+        value for value in required_fields
+        if " ".join(_tokens(value)) not in normalized_extracted
+    ]
+    if missing:
+        raise RuntimeError(f"The exported PDF text layer is missing: {', '.join(missing)}")
+
+    expected_text = " ".join(
+        list(profile.values())
+        + [
+            f"{section.get('title', '')} {_plain_markdown(section.get('content', ''))}"
+            for section in cv.sections
+        ]
+    )
+    expected_counts = Counter(_tokens(expected_text))
+    extracted_counts = Counter(_tokens(extracted))
+    matched_words = sum(min(count, extracted_counts[word]) for word, count in expected_counts.items())
+    expected_words = sum(expected_counts.values())
+    if expected_words and matched_words / expected_words < 0.95:
+        raise RuntimeError("The exported PDF text layer does not contain enough of the CV content")
 
 
 def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> None:

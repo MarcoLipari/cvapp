@@ -1,7 +1,7 @@
 """SQLite persistence for CV Manager.
 
-CVs snapshot both their selected sections and profile so a submitted CV can
-always be reproduced even when the library or contact details later change.
+CVs snapshot their profile and selected content. Sections sourced from the
+library retain a link so later library edits can be propagated to those CVs.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ class Section:
     category: str
     content: str
     sort_order: int
+    labels: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,8 @@ class CVDatabase:
                     title TEXT NOT NULL,
                     category TEXT NOT NULL,
                     content TEXT NOT NULL,
-                    sort_order INTEGER NOT NULL DEFAULT 0
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    labels TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS cvs (
                     id INTEGER PRIMARY KEY,
@@ -107,10 +109,13 @@ class CVDatabase:
             application_columns = {row["name"] for row in db.execute("PRAGMA table_info(applications)")}
             if "posting_url" not in application_columns:
                 db.execute("ALTER TABLE applications ADD COLUMN posting_url TEXT NOT NULL DEFAULT ''")
+            section_columns = {row["name"] for row in db.execute("PRAGMA table_info(sections)")}
+            if "labels" not in section_columns:
+                db.execute("ALTER TABLE sections ADD COLUMN labels TEXT NOT NULL DEFAULT ''")
 
     @staticmethod
     def _section(row: sqlite3.Row) -> Section:
-        return Section(row["id"], row["title"], row["category"], row["content"], row["sort_order"])
+        return Section(row["id"], row["title"], row["category"], row["content"], row["sort_order"], row["labels"])
 
     @staticmethod
     def _cv(row: sqlite3.Row) -> CV:
@@ -144,14 +149,50 @@ class CVDatabase:
             row = db.execute("SELECT * FROM sections WHERE id = ?", (section_id,)).fetchone()
         return self._section(row) if row else None
 
-    def create_section(self, title: str, category: str, content: str) -> int:
+    def create_section(self, title: str, category: str, content: str, labels: str = "") -> int:
         with self._connect() as db:
             order = db.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM sections").fetchone()[0]
-            return db.execute("INSERT INTO sections(title, category, content, sort_order) VALUES (?, ?, ?, ?)", (title, category, content, order)).lastrowid
+            return db.execute(
+                "INSERT INTO sections(title, category, content, sort_order, labels) VALUES (?, ?, ?, ?, ?)",
+                (title, category, content, order, labels),
+            ).lastrowid
 
-    def update_section(self, section_id: int, title: str, category: str, content: str) -> None:
+    def update_section(self, section_id: int, title: str, category: str, content: str, labels: str = "") -> list[int]:
+        affected_cv_ids = []
         with self._connect() as db:
-            db.execute("UPDATE sections SET title=?, category=?, content=? WHERE id=?", (title, category, content, section_id))
+            previous = db.execute("SELECT title, category, content FROM sections WHERE id=?", (section_id,)).fetchone()
+            if not previous:
+                raise ValueError("Section not found")
+            db.execute(
+                "UPDATE sections SET title=?, category=?, content=?, labels=? WHERE id=?",
+                (title, category, content, labels, section_id),
+            )
+            if all(value == previous[key] for key, value in (("title", title), ("category", category), ("content", content))):
+                return affected_cv_ids
+            rows = db.execute("SELECT id, sections_json FROM cvs").fetchall()
+            for row in rows:
+                sections = json.loads(row["sections_json"])
+                changed = False
+                for section in sections:
+                    linked = section.get("source_section_id") == section_id
+                    legacy_match = "source_section_id" not in section and all(
+                        section.get(key, "") == previous[key] for key in ("title", "category", "content")
+                    )
+                    if linked or legacy_match:
+                        section.update({
+                            "title": title,
+                            "category": category,
+                            "content": content,
+                            "source_section_id": section_id,
+                        })
+                        changed = True
+                if changed:
+                    db.execute(
+                        "UPDATE cvs SET sections_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                        (json.dumps(sections), row["id"]),
+                    )
+                    affected_cv_ids.append(row["id"])
+        return affected_cv_ids
 
     def delete_section(self, section_id: int) -> None:
         self.delete_sections([section_id])
@@ -173,14 +214,41 @@ class CVDatabase:
             row = db.execute("SELECT * FROM cvs WHERE id=?", (cv_id,)).fetchone()
         return self._cv(row) if row else None
 
-    def create_cv(self, name: str, sections: list[Section], profile: dict[str, str] | None = None) -> CV:
-        snapshot = [{"title": section.title, "category": section.category, "content": section.content} for section in sections]
+    @staticmethod
+    def _section_snapshot(section: Section | dict) -> dict:
+        """Return the portable fields stored in a CV snapshot."""
+        if isinstance(section, Section):
+            return {"title": section.title, "category": section.category, "content": section.content, "source_section_id": section.id}
+        snapshot = {key: str(section.get(key, "")) for key in ("title", "category", "content")}
+        if section.get("source_section_id") is not None:
+            snapshot["source_section_id"] = int(section["source_section_id"])
+        return snapshot
+
+    def create_cv(self, name: str, sections: list[Section | dict], profile: dict[str, str] | None = None) -> CV:
+        snapshot = [self._section_snapshot(section) for section in sections]
         profile_snapshot = DEFAULT_PROFILE | (profile or self.get_profile())
         with self._connect() as db:
             cv_id = db.execute(
                 "INSERT INTO cvs(name, created_at, sections_json, profile_json) VALUES (?, ?, ?, ?)",
                 (name, datetime.now().isoformat(timespec="seconds"), json.dumps(snapshot), json.dumps(profile_snapshot)),
             ).lastrowid
+        return self.get_cv(cv_id)
+
+    def update_cv(self, cv_id: int, name: str, sections: list[Section | dict], profile: dict[str, str] | None = None) -> CV:
+        """Update a CV snapshot while retaining its identity and creation date."""
+        if not name.strip() or not sections:
+            raise ValueError("A CV needs a name and at least one section")
+        snapshot = [self._section_snapshot(section) for section in sections]
+        with self._connect() as db:
+            current = db.execute("SELECT profile_json FROM cvs WHERE id=?", (cv_id,)).fetchone()
+            if not current:
+                raise ValueError("CV not found")
+            saved_profile = json.loads(current["profile_json"] or "{}")
+            profile_snapshot = DEFAULT_PROFILE | (profile if profile is not None else saved_profile)
+            db.execute(
+                "UPDATE cvs SET name=?, sections_json=?, profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                (name.strip(), json.dumps(snapshot), json.dumps(profile_snapshot), cv_id),
+            )
         return self.get_cv(cv_id)
 
     def update_cv_exports(self, cv_id: int, markdown_path: str | Path, pdf_path: str | Path) -> None:

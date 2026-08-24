@@ -10,14 +10,44 @@ class DatabaseTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.db = CVDatabase(Path(self.temp.name) / "test.sqlite3")
     def tearDown(self): self.temp.cleanup()
-    def test_section_edit_does_not_change_saved_cv_snapshot(self):
+    def test_section_edit_updates_linked_cv_and_invalidates_exports(self):
         section_id = self.db.create_section("Skills", "Skills", "Python and SQL")
         cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+        self.db.update_cv_exports(cv.id, "old.md", "old.pdf")
         self.db.update_section(section_id, "Skills", "Skills", "Swift and Rust")
         saved = self.db.get_cv(cv.id)
-        self.assertEqual(saved.sections[0]["content"], "Python and SQL")
-        self.assertIn("Python and SQL", render_markdown(saved))
+        self.assertEqual(saved.sections[0]["content"], "Swift and Rust")
+        self.assertEqual(saved.sections[0]["source_section_id"], section_id)
+        self.assertIn("Swift and Rust", render_markdown(saved))
+        self.assertIsNone(saved.markdown_path)
+        self.assertIsNone(saved.pdf_path)
         self.assertTrue(render_markdown(saved).startswith("# CV MANAGER USER"))
+
+    def test_section_labels_are_library_only_metadata(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python and SQL", "data, backend")
+        cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+        self.db.update_cv_exports(cv.id, "saved.md", "saved.pdf")
+
+        affected_cv_ids = self.db.update_section(
+            section_id, "Skills", "Skills", "Python and SQL", "machine learning"
+        )
+
+        section = self.db.get_section(section_id)
+        saved_cv = self.db.get_cv(cv.id)
+        self.assertEqual(section.labels, "machine learning")
+        self.assertEqual(affected_cv_ids, [])
+        self.assertNotIn("labels", saved_cv.sections[0])
+        self.assertEqual(saved_cv.markdown_path, "saved.md")
+        self.assertEqual(saved_cv.pdf_path, "saved.pdf")
+
+    def test_cv_specific_section_edit_is_not_changed_by_library_update(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+        self.db.update_cv(cv.id, cv.name, [{"title": "Skills", "category": "Skills", "content": "Tailored Python"}], cv.profile)
+
+        self.db.update_section(section_id, "Skills", "Skills", "Rust")
+
+        self.assertEqual(self.db.get_cv(cv.id).sections[0]["content"], "Tailored Python")
 
     def test_cv_snapshots_current_profile(self):
         self.db.update_profile({"name": "Test Person", "phone": "1", "email": "test@example.com", "github": "example.com/a", "website": "example.com"})
@@ -25,6 +55,23 @@ class DatabaseTests(unittest.TestCase):
         cv = self.db.create_cv("Role", [self.db.get_section(section_id)])
         self.db.update_profile({"name": "Changed Person", "phone": "2", "email": "changed@example.com", "github": "example.com/b", "website": "changed.example"})
         self.assertIn("# TEST PERSON", render_markdown(self.db.get_cv(cv.id)))
+
+    def test_cv_can_be_edited_without_losing_identity_or_profile_snapshot(self):
+        self.db.update_profile({"name": "Original Person", "phone": "1", "email": "original@example.com", "github": "", "website": ""})
+        first_id = self.db.create_section("Skills", "Skills", "Python")
+        second_id = self.db.create_section("Projects", "Projects", "A useful project")
+        cv = self.db.create_cv("First name", [self.db.get_section(first_id)])
+        self.db.update_cv_exports(cv.id, "old.md", "old.pdf")
+
+        updated = self.db.update_cv(cv.id, "Updated name", [self.db.get_section(second_id)])
+
+        self.assertEqual(updated.id, cv.id)
+        self.assertEqual(updated.created_at, cv.created_at)
+        self.assertEqual(updated.name, "Updated name")
+        self.assertEqual(updated.sections[0]["title"], "Projects")
+        self.assertEqual(updated.profile["name"], "Original Person")
+        self.assertIsNone(updated.markdown_path)
+        self.assertIsNone(updated.pdf_path)
     def test_application_lifecycle_and_counts(self):
         application_id = self.db.create_application(company="Acme", role="Designer", location="Toronto", application_date="2026-08-22", status="Applied", cv_id=None, notes="Sent", posting_url="example.com/job")
         self.assertEqual(self.db.status_counts(), {"Applied": 1})
@@ -79,6 +126,24 @@ class DatabaseTests(unittest.TestCase):
         migrated = CVDatabase(legacy_path)
         self.assertEqual(migrated.get_cv(1).profile["name"], "CV Manager User")
         self.assertEqual(migrated.get_application(1).posting_url, "")
+
+    def test_existing_sections_gain_empty_labels(self):
+        legacy_path = Path(self.temp.name) / "legacy-sections.sqlite3"
+        with sqlite3.connect(legacy_path) as legacy:
+            legacy.executescript("""
+                CREATE TABLE sections (
+                    id INTEGER PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO sections VALUES (1, 'Skills', 'Skills', 'Python', 0);
+            """)
+
+        migrated = CVDatabase(legacy_path)
+
+        self.assertEqual(migrated.get_section(1).labels, "")
 
     def test_backup_contains_every_user_record(self):
         section_id = self.db.create_section("Skills", "Skills", "Python")
