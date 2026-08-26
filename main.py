@@ -6,8 +6,8 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QStandardPaths, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtCore import QDate, QSize, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -30,7 +30,9 @@ APP_STYLESHEET = """
     QListWidget::item:selected { background: #1d4ed8; color: white; font-weight: 600; }
     QListWidget::item:hover { background: #243b53; }
     QTableWidget { background: white; alternate-background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; gridline-color: #edf2f7; selection-background-color: #dbeafe; selection-color: #0f172a; }
-    QTreeWidget { background: white; border: 1px solid #e2e8f0; border-radius: 10px; selection-background-color: #dbeafe; selection-color: #0f172a; }
+    QTreeWidget { background: white; alternate-background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; selection-background-color: #dbeafe; selection-color: #0f172a; outline: none; }
+    QTreeWidget::item { padding: 5px 4px; border-bottom: 1px solid #f1f5f9; }
+    QTreeWidget::item:hover { background: #eff6ff; }
     QHeaderView::section { background: #f1f5f9; color: #475569; border: 0; border-bottom: 1px solid #e2e8f0; padding: 9px; font-weight: 600; }
     QPushButton { background: #1d4ed8; color: white; border: 0; border-radius: 7px; padding: 8px 13px; font-weight: 600; }
     QPushButton:hover { background: #1e40af; }
@@ -47,12 +49,63 @@ TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
 TREE_DATA_ROLE = TREE_KIND_ROLE + 1
 
 
-class TreeEditDelegate(QStyledItemDelegate):
+class ExistingTextEditDelegate(QStyledItemDelegate):
+    """Open tree values with their existing text and a normal caret."""
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.setStyleSheet(
+                "QLineEdit { color: #0f172a; background-color: #ffffff; "
+                "border: 2px solid #3b82f6; border-radius: 5px; padding: 3px 6px; "
+                "selection-color: #0f172a; selection-background-color: #bfdbfe; }"
+            )
+        return editor
+
+    def setEditorData(self, editor, index):
+        if not isinstance(editor, QLineEdit):
+            super().setEditorData(editor, index)
+            return
+        value = index.data(Qt.ItemDataRole.DisplayRole)
+        editor.setText("" if value is None else str(value))
+
+        def position_caret():
+            if not editor:
+                return
+            mouse_position = editor.mapFromGlobal(QCursor.pos())
+            if editor.rect().contains(mouse_position):
+                editor.setCursorPosition(editor.cursorPositionAt(mouse_position))
+            else:
+                editor.setCursorPosition(len(editor.text()))
+            editor.deselect()
+
+        QTimer.singleShot(0, position_caret)
+
+    def updateEditorGeometry(self, editor, option, index):
+        geometry = option.rect
+        height = max(34, geometry.height())
+        geometry.setHeight(height)
+        geometry.moveCenter(option.rect.center())
+        editor.setGeometry(geometry)
+
+
+class TreeEditDelegate(ExistingTextEditDelegate):
     """Allow editing only the tree cells that are persisted."""
 
     def createEditor(self, parent, option, index):
         kind = index.siblingAtColumn(0).data(TREE_KIND_ROLE)
-        editable_columns = {"cv": {1}, "profile_field": {1}, "section": {0, 1}, "content": {1}}
+        editable_columns = {"cv": {1}, "profile_field": {1}, "section": {0, 1}, "entry": {1}, "details": {1}, "content": {1}}
+        if index.column() not in editable_columns.get(kind, set()):
+            return None
+        return super().createEditor(parent, option, index)
+
+
+class LibraryTreeEditDelegate(ExistingTextEditDelegate):
+    """Allow direct edits to the values displayed in the section tree."""
+
+    def createEditor(self, parent, option, index):
+        kind = index.siblingAtColumn(0).data(TREE_KIND_ROLE)
+        editable_columns = {"section": {0, 1, 2}, "entry": {1}, "details": {1}, "content": {1}}
         if index.column() not in editable_columns.get(kind, set()):
             return None
         return super().createEditor(parent, option, index)
@@ -365,7 +418,7 @@ class MainWindow(QMainWindow):
     def tree_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout()
-        header.addWidget(title("CV tree", "Edit a CV as a hierarchy: CV → sections → lines and bullet points."))
+        header.addWidget(title("CV tree", "Edit a CV as a hierarchy: CV → sections → entries → bullet points."))
         header.addStretch()
         self.tree_cv_picker = QComboBox(); self.tree_cv_picker.setMinimumWidth(240)
         self.tree_cv_picker.currentIndexChanged.connect(self.load_cv_tree)
@@ -383,6 +436,8 @@ class MainWindow(QMainWindow):
         actions = QHBoxLayout()
         for text, action, primary in [
             ("Add section", self.add_tree_section, False),
+            ("Add entry", self.add_tree_entry, False),
+            ("Add organization", self.add_tree_details, False),
             ("Add bullet", lambda: self.add_tree_content("- New bullet point"), False),
             ("Add line", lambda: self.add_tree_content("New line"), False),
             ("Remove", self.remove_tree_node, False),
@@ -414,6 +469,43 @@ class MainWindow(QMainWindow):
         if not line:
             return "Spacing"
         return "Line"
+
+    @staticmethod
+    def section_uses_entries(category: str, title: str = "") -> bool:
+        flat_sections = {"education", "personal details"}
+        return not any(value.strip().casefold() in flat_sections for value in (category, title))
+
+    def add_section_content_to_tree(self, section_item: QTreeWidgetItem, content: str) -> None:
+        lines = content.splitlines()
+        if not self.section_uses_entries(section_item.text(1), section_item.text(0)):
+            for line in lines:
+                section_item.addChild(self.tree_item("content", self.content_node_label(line), line))
+            return
+
+        entry = None
+        entry_has_bullet = False
+        for line in lines:
+            is_bullet = line.startswith(("- ", "* "))
+            starts_entry = not is_bullet and bool(line) and (
+                entry is None or entry_has_bullet or line.lstrip().startswith("**")
+            )
+            if starts_entry:
+                entry = self.tree_item("entry", "Entry", line)
+                section_item.addChild(entry)
+                entry.setExpanded(True)
+                entry_has_bullet = False
+            elif entry is None:
+                entry = self.tree_item("entry", "Entry", "")
+                section_item.addChild(entry)
+                entry.setExpanded(True)
+                entry.addChild(self.tree_item("content", self.content_node_label(line), line))
+            else:
+                if not is_bullet and " :: " in line:
+                    child = self.tree_item("details", "Organization / location", line)
+                else:
+                    child = self.tree_item("content", self.content_node_label(line), line)
+                entry.addChild(child)
+                entry_has_bullet = entry_has_bullet or is_bullet
 
     def refresh_tree_picker(self, cvs: list) -> None:
         if not hasattr(self, "tree_cv_picker"):
@@ -458,8 +550,7 @@ class MainWindow(QMainWindow):
                 labels=library_labels.get(section.get("source_section_id"), ""),
             )
             root.addChild(section_item)
-            for line in section.get("content", "").splitlines():
-                section_item.addChild(self.tree_item("content", self.content_node_label(line), line))
+            self.add_section_content_to_tree(section_item, section.get("content", ""))
         root.setExpanded(True); profile.setExpanded(True)
         for index in range(root.childCount()):
             root.child(index).setExpanded(True)
@@ -471,31 +562,58 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "No CV selected", "Build or select a CV before adding a section.")
             return
         section = self.tree_item("section", "New section", "Other", {})
-        section.addChild(self.tree_item("content", "Bullet", "- New bullet point"))
+        entry = self.tree_item("entry", "Entry", "New entry")
+        entry.addChild(self.tree_item("content", "Bullet", "- New bullet point"))
+        entry.setExpanded(True)
+        section.addChild(entry)
         root.addChild(section); root.setExpanded(True); section.setExpanded(True)
         self.cv_tree.setCurrentItem(section); self.cv_tree.editItem(section, 0)
 
+    def add_tree_entry(self) -> None:
+        item = self.cv_tree.currentItem()
+        while item and item.data(0, TREE_KIND_ROLE) not in {"section", "cv"}:
+            item = item.parent()
+        if not item or item.data(0, TREE_KIND_ROLE) != "section" or not self.section_uses_entries(item.text(1), item.text(0)):
+            QMessageBox.information(self, "Select a section", "Select a section other than Education before adding an entry.")
+            return
+        entry = self.tree_item("entry", "Entry", "New entry")
+        item.addChild(entry); item.setExpanded(True); entry.setExpanded(True); self.cv_tree.setCurrentItem(entry); self.cv_tree.editItem(entry, 1)
+
+    def add_tree_details(self) -> None:
+        item = self.cv_tree.currentItem()
+        if item and item.data(0, TREE_KIND_ROLE) in {"details", "content"}:
+            item = item.parent()
+        if not item or item.data(0, TREE_KIND_ROLE) != "entry":
+            QMessageBox.information(self, "Select an entry", "Select an entry before adding its organization and location.")
+            return
+        details = self.tree_item("details", "Organization / location", "*Organization* :: *Location*")
+        item.insertChild(0, details); item.setExpanded(True); self.cv_tree.setCurrentItem(details); self.cv_tree.editItem(details, 1)
+
     def add_tree_content(self, line: str) -> None:
         item = self.cv_tree.currentItem()
-        if item and item.data(0, TREE_KIND_ROLE) == "content":
+        if item and item.data(0, TREE_KIND_ROLE) in {"details", "content"}:
             item = item.parent()
-        if not item or item.data(0, TREE_KIND_ROLE) != "section":
-            QMessageBox.information(self, "Select a section", "Select a section or one of its content nodes first.")
+        if item and item.data(0, TREE_KIND_ROLE) == "entry":
+            parent = item
+        elif item and item.data(0, TREE_KIND_ROLE) == "section" and not self.section_uses_entries(item.text(1), item.text(0)):
+            parent = item
+        else:
+            QMessageBox.information(self, "Select content", "Select an entry, or select Education to add a line directly.")
             return
         content = self.tree_item("content", self.content_node_label(line), line)
-        item.addChild(content); item.setExpanded(True); self.cv_tree.setCurrentItem(content); self.cv_tree.editItem(content, 1)
+        parent.addChild(content); parent.setExpanded(True); self.cv_tree.setCurrentItem(content); self.cv_tree.editItem(content, 1)
 
     def remove_tree_node(self) -> None:
         item = self.cv_tree.currentItem()
-        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "content"}:
-            QMessageBox.information(self, "Select content", "Only sections, lines, and bullet points can be removed.")
+        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "entry", "details", "content"}:
+            QMessageBox.information(self, "Select content", "Only sections, entries, organization details, lines, and bullet points can be removed.")
             return
         parent = item.parent()
         parent.takeChild(parent.indexOfChild(item))
 
     def move_tree_node(self, offset: int) -> None:
         item = self.cv_tree.currentItem()
-        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "content"}:
+        if not item or item.data(0, TREE_KIND_ROLE) not in {"section", "entry", "details", "content"}:
             return
         parent = item.parent(); row = parent.indexOfChild(item); target = row + offset
         if 0 <= target < parent.childCount() and parent.child(target).data(0, TREE_KIND_ROLE) == item.data(0, TREE_KIND_ROLE):
@@ -513,7 +631,7 @@ class MainWindow(QMainWindow):
                     field = item.child(field_index)
                     profile[field.data(0, TREE_DATA_ROLE)] = field.text(1).strip()
             elif kind == "section":
-                content = "\n".join(item.child(line).text(1) for line in range(item.childCount())).strip()
+                content = self.section_item_content(item)
                 section = {"title": item.text(0).strip(), "category": item.text(1).strip() or "Other", "content": content}
                 original = item.data(0, TREE_DATA_ROLE) or {}
                 if original.get("source_section_id") is not None and all(section[key] == original.get(key, "") for key in ("title", "category", "content")):
@@ -542,13 +660,41 @@ class MainWindow(QMainWindow):
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Section library", "Compose each CV from reusable, tailored content blocks.")); header.addStretch(); importer = secondary_button("Import CV…"); add = QPushButton("New section"); edit = secondary_button("Edit"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); edit.clicked.connect(self.edit_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(edit); header.addWidget(delete); layout.addLayout(header)
-        self.section_table = self.table(["Title", "Category", "Job labels", "Words", "Content preview"]); self.section_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.section_table.itemDoubleClicked.connect(lambda _: self.edit_section()); self.section_table.itemSelectionChanged.connect(self.refresh_section_details); layout.addWidget(self.section_table, 1)
-        section_card, self.section_detail_labels = self.detail_card([
-            ("identity", "Selected section"), ("labels", "Job labels"), ("content", "Full content"),
-        ])
-        layout.addWidget(section_card)
+        header = QHBoxLayout(); header.addWidget(title("Section library", "Double-click the exact section, entry, organization, or bullet you want to edit.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("See MD preview"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
+        self.section_tree = QTreeWidget()
+        self.section_tree.setColumnCount(4); self.section_tree.setHeaderLabels(["Section / node", "Value / category", "Job labels", "Words"])
+        self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
+        self.section_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.section_tree.setIndentation(24); self.section_tree.setAnimated(True)
+        self.section_tree.setItemDelegate(LibraryTreeEditDelegate(self.section_tree))
+        self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
+        self.section_tree.itemChanged.connect(self.refresh_section_preview)
+        self.section_tree.header().setStretchLastSection(False); self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
+        layout.addWidget(self.section_tree, 1)
+        editor = QFrame(); editor.setProperty("card", True)
+        editor_layout = QVBoxLayout(editor); editor_layout.setContentsMargins(18, 14, 18, 16); editor_layout.setSpacing(10)
+        editor_heading = QLabel("Selected section document preview"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
+        fields = QHBoxLayout()
+        self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("Section title")
+        self.section_editor_category = QComboBox(); self.section_editor_category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"]); self.section_editor_category.setEditable(True)
+        self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Job labels")
+        self.section_editor_title.setReadOnly(True); self.section_editor_category.setEnabled(False); self.section_editor_labels.setReadOnly(True)
+        fields.addWidget(self.section_editor_title, 2); fields.addWidget(self.section_editor_category, 1); fields.addWidget(self.section_editor_labels, 2)
+        editor_layout.addLayout(fields)
+        self.section_content_editor = QPlainTextEdit(); self.section_content_editor.setMinimumHeight(180)
+        self.section_content_editor.setPlaceholderText("Select a section, then edit its complete content here.")
+        self.section_content_editor.setReadOnly(True)
+        self.section_content_editor.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
+        editor_layout.addWidget(self.section_content_editor)
+        editor_hint = QLabel("Double-click values in the hierarchy to edit them. This preview shows the complete Markdown document that will be saved.")
+        editor_hint.setProperty("muted", True); editor_layout.addWidget(editor_hint)
+        self.section_preview_widget = editor; editor.hide(); layout.addWidget(editor)
         return page
+
+    def toggle_section_preview(self) -> None:
+        show_preview = self.section_preview_widget.isHidden()
+        self.section_preview_widget.setVisible(show_preview)
+        self.section_preview_button.setText("Hide MD preview" if show_preview else "See MD preview")
 
     def profile_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
@@ -579,6 +725,67 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(str(value)); item.setData(Qt.ItemDataRole.UserRole, record.id); table.setItem(row, col, item)
         table.resizeColumnsToContents(); table.setSortingEnabled(True)
 
+    def fill_section_tree(self, sections: list[Section]) -> None:
+        selected_id = self.selected_section_id()
+        self.section_tree.clear()
+        selected_item = None
+        for section in sections:
+            item = self.tree_item("section", section.title, section.category, section.id, labels=section.labels or "—")
+            item.setText(3, str(len(section.content.split())))
+            self.section_tree.addTopLevelItem(item)
+            self.add_section_content_to_tree(item, section.content)
+            self.style_library_section(item)
+            item.setExpanded(True)
+            if section.id == selected_id:
+                selected_item = item
+        self.section_tree.resizeColumnToContents(0)
+        self.section_tree.resizeColumnToContents(2)
+        self.section_tree.resizeColumnToContents(3)
+        if selected_item:
+            self.section_tree.setCurrentItem(selected_item)
+
+    @staticmethod
+    def section_item_content(section_item: QTreeWidgetItem) -> str:
+        lines = []
+        for child_index in range(section_item.childCount()):
+            child = section_item.child(child_index)
+            if child.data(0, TREE_KIND_ROLE) == "entry":
+                lines.append(child.text(1))
+                lines.extend(child.child(line).text(1) for line in range(child.childCount()))
+            else:
+                lines.append(child.text(1))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def style_library_section(section_item: QTreeWidgetItem) -> None:
+        section_background = QBrush(QColor("#eaf2ff"))
+        entry_background = QBrush(QColor("#f8fafc"))
+        primary = QBrush(QColor("#0f172a"))
+        muted = QBrush(QColor("#64748b"))
+        for column in range(4):
+            section_item.setBackground(column, section_background)
+            section_item.setForeground(column, primary if column < 2 else muted)
+        section_item.setSizeHint(1, QSize(1, 38))
+        for column in (0, 1):
+            font = section_item.font(column); font.setBold(True); section_item.setFont(column, font)
+
+        for child_index in range(section_item.childCount()):
+            entry = section_item.child(child_index)
+            if entry.data(0, TREE_KIND_ROLE) != "entry":
+                entry.setForeground(0, muted)
+                entry.setSizeHint(1, QSize(1, 34))
+                continue
+            for column in range(4):
+                entry.setBackground(column, entry_background)
+            entry.setSizeHint(1, QSize(1, 36))
+            font = entry.font(0); font.setBold(True); entry.setFont(0, font)
+            for detail_index in range(entry.childCount()):
+                detail = entry.child(detail_index)
+                detail.setSizeHint(1, QSize(1, 34))
+                if detail.data(0, TREE_KIND_ROLE) == "details":
+                    detail.setForeground(0, muted)
+                    detail.setForeground(1, muted)
+
     def refresh_all(self) -> None:
         applications, cvs, sections, counts = self.db.list_applications(), self.db.list_cvs(), self.db.list_sections(), self.db.status_counts()
         for status, card in self.status_cards.items():
@@ -588,7 +795,7 @@ class MainWindow(QMainWindow):
         cv_names = {cv.id: cv.name for cv in cvs}
         self.fill_table(self.cv_table, cvs, lambda cv: [cv.name, cv.created_at[:10], len(cv.sections), "Ready" if cv.pdf_path else "Not exported"])
         self.refresh_tree_picker(cvs)
-        self.fill_table(self.section_table, sections, lambda s: [s.title, s.category, s.labels or "—", len(s.content.split()), s.content.replace("\n", " ")[:140]])
+        self.fill_section_tree(sections)
         profile = self.db.get_profile()
         for key, label in self.profile_labels.items(): label.setText(profile[key] or "—")
         self.refresh_cv_details(); self.refresh_section_details()
@@ -640,19 +847,37 @@ class MainWindow(QMainWindow):
         for key, value in values.items(): self.cv_detail_labels[key].setText(value)
 
     def refresh_section_details(self) -> None:
-        if not hasattr(self, "section_detail_labels"):
+        if not hasattr(self, "section_content_editor"):
             return
-        section_id = self.selected_id(self.section_table)
-        section = self.db.get_section(section_id) if section_id else None
-        if section:
-            identity = f"{section.title} · {section.category} · {len(section.content.split())} words"
-            labels = section.labels or "No job labels"
-            content = section.content
-        else:
-            identity, labels, content = "Select a section to read its complete reusable content.", "—", "—"
-        self.section_detail_labels["identity"].setText(identity)
-        self.section_detail_labels["labels"].setText(labels)
-        self.section_detail_labels["content"].setText(content)
+        item = self.library_section_item(self.section_tree.currentItem())
+        enabled = item is not None
+        self.section_preview_button.setEnabled(enabled)
+        if not enabled:
+            self.section_preview_widget.hide()
+            self.section_preview_button.setText("See MD preview")
+        self.section_editor_title.setEnabled(enabled)
+        self.section_editor_category.setEnabled(False)
+        self.section_editor_labels.setEnabled(enabled)
+        self.section_content_editor.setEnabled(enabled)
+        self._section_editor_id = item.data(0, TREE_DATA_ROLE) if item else None
+        self.refresh_section_preview(item)
+
+    def refresh_section_preview(self, changed_item: QTreeWidgetItem | None = None, column: int = 0) -> None:
+        if not hasattr(self, "section_content_editor"):
+            return
+        item = self.library_section_item(changed_item or self.section_tree.currentItem())
+        current = self.library_section_item(self.section_tree.currentItem())
+        if not item or (current and item is not current):
+            return
+        labels = item.text(2).strip()
+        self.section_editor_title.setText(item.text(0))
+        self.section_editor_category.setCurrentText(item.text(1) or "Other")
+        self.section_editor_labels.setText("" if labels == "—" else labels)
+        content = self.section_item_content(item)
+        self.section_content_editor.setPlainText(content)
+        word_count = str(len(content.split()))
+        if item.text(3) != word_count:
+            item.setText(3, word_count)
 
     @staticmethod
     def selected_id(table: QTableWidget) -> int | None:
@@ -661,6 +886,27 @@ class MainWindow(QMainWindow):
     @staticmethod
     def selected_ids(table: QTableWidget) -> list[int]:
         return [index.data(Qt.ItemDataRole.UserRole) for index in table.selectionModel().selectedRows(0)]
+
+    @staticmethod
+    def library_section_item(item: QTreeWidgetItem | None) -> QTreeWidgetItem | None:
+        while item and item.parent():
+            item = item.parent()
+        return item if item and item.data(0, TREE_KIND_ROLE) == "section" else None
+
+    def selected_section_id(self) -> int | None:
+        if not hasattr(self, "section_tree"):
+            return None
+        item = self.library_section_item(self.section_tree.currentItem())
+        return item.data(0, TREE_DATA_ROLE) if item else None
+
+    def selected_section_ids(self) -> list[int]:
+        if not hasattr(self, "section_tree"):
+            return []
+        return list(dict.fromkeys(
+            item.data(0, TREE_DATA_ROLE)
+            for selected in self.section_tree.selectedItems()
+            if (item := self.library_section_item(selected)) is not None
+        ))
 
     def edit_profile(self) -> None:
         dialog = ProfileDialog(self.db.get_profile(), self)
@@ -694,12 +940,31 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Imported {len(dialog.selected_sections())} CV section(s).", 6000)
 
     def edit_section(self) -> None:
-        section_id = self.selected_id(self.section_table)
+        section_id = self.selected_section_id()
         if not section_id: QMessageBox.information(self, "Select a section", "Select a section to edit."); return
         dialog = SectionDialog(self.db.get_section(section_id), self)
         if not dialog.exec():
             return
-        affected_cv_ids = self.db.update_section(section_id, *dialog.values())
+        self.update_library_section(section_id, *dialog.values())
+
+    def save_library_section(self) -> None:
+        item = self.library_section_item(self.section_tree.currentItem())
+        if not item:
+            QMessageBox.information(self, "Select a section", "Select a section or one of its content nodes before saving.")
+            return
+        title = item.text(0).strip()
+        category = item.text(1).strip() or "Other"
+        labels = item.text(2).strip()
+        if labels == "—":
+            labels = ""
+        content = self.section_item_content(item)
+        if not title or not content:
+            QMessageBox.warning(self, "Incomplete section", "A section needs both a title and content.")
+            return
+        self.update_library_section(item.data(0, TREE_DATA_ROLE), title, category, content, labels)
+
+    def update_library_section(self, section_id: int, title: str, category: str, content: str, labels: str = "") -> None:
+        affected_cv_ids = self.db.update_section(section_id, title, category, content, labels)
         failed_exports = []
         for cv_id in affected_cv_ids:
             cv = self.db.get_cv(cv_id)
@@ -717,9 +982,11 @@ class MainWindow(QMainWindow):
             )
         elif affected_cv_ids:
             self.statusBar().showMessage(f"Updated this section in {len(affected_cv_ids)} linked CV(s) and regenerated their exports.", 6000)
+        else:
+            self.statusBar().showMessage("Saved reusable section changes.", 6000)
 
     def delete_section(self) -> None:
-        section_ids = self.selected_ids(self.section_table)
+        section_ids = self.selected_section_ids()
         if not section_ids:
             QMessageBox.information(self, "Select sections", "Select one or more sections to delete.")
             return
