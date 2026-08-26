@@ -20,7 +20,7 @@ async function loadSettings() {
 
 $("#save-settings").addEventListener("click", async () => {
   await browserApi.storage.local.set({ endpoint: $("#endpoint").value.trim(), token: $("#token").value.trim() });
-  setStatus("Connection settings saved.", "success");
+  setStatus("CV Manager connection saved.", "success");
 });
 
 $("#capture-form").addEventListener("submit", async (event) => {
@@ -28,7 +28,7 @@ $("#capture-form").addEventListener("submit", async (event) => {
   const endpoint = $("#endpoint").value.trim();
   const token = $("#token").value.trim();
   if (!endpoint || !token) {
-    setStatus("Copy the endpoint and token from CV Manager first.", "error");
+    setStatus("Copy the endpoint and token from Safari Capture first.", "error");
     return;
   }
   const button = event.submitter;

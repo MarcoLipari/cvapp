@@ -138,7 +138,7 @@ class ProfileDialog(QDialog):
         self.setWindowTitle("Personal details")
         self.setMinimumWidth(460)
         layout = QVBoxLayout(self)
-        layout.addWidget(title("Personal details", "These details are snapshotted whenever you create a CV."))
+        layout.addWidget(title("Personal details", "These details are copied into each new CV and do not change afterward."))
         form = QFormLayout()
         self.fields = {}
         labels = {"name": "Full name", "phone": "Phone", "email": "Email", "github": "GitHub display URL", "website": "Website display URL"}
@@ -164,7 +164,7 @@ class SectionDialog(QDialog):
         self.setWindowTitle("Edit section" if section else "New section")
         self.resize(660, 520)
         layout = QVBoxLayout(self)
-        layout.addWidget(title(self.windowTitle(), "Use Markdown: **bold**, *italic*, and - bullets."))
+        layout.addWidget(title(self.windowTitle(), "Formatting supported: **bold**, *italic*, links, and - bullets."))
         form = QFormLayout()
         self.title = QLineEdit(section.title if section else "")
         self.category = QComboBox(); self.category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"])
@@ -174,7 +174,7 @@ class SectionDialog(QDialog):
         self.labels.setPlaceholderText("e.g. backend, data engineering, fintech")
         form.addRow("Section title", self.title); form.addRow("Category", self.category)
         if show_labels:
-            form.addRow("Job labels", self.labels)
+            form.addRow("Job labels (optional)", self.labels)
         layout.addLayout(form)
         self.content = QPlainTextEdit(section.content if section else "")
         self.content.setPlaceholderText("Example:\n**Data Engineering Intern** :: *May 2026 - Present*\n*Example Company* :: *Montreal, QC*\n- Built reliable data pipelines...\n- Improved reporting...")
@@ -231,7 +231,7 @@ class ApplicationDialog(QDialog):
         self.setWindowTitle("Edit application" if application else "Add application")
         self.setMinimumWidth(500)
         layout = QVBoxLayout(self)
-        layout.addWidget(title(self.windowTitle(), "Keep each submission tied to the exact CV you used."))
+        layout.addWidget(title(self.windowTitle(), "Record the role, progress, posting, notes, and CV used for each application."))
         form = QFormLayout()
         self.company = QLineEdit(application.company if application else "")
         self.role = QLineEdit(application.role if application else "")
@@ -270,8 +270,8 @@ class CVDialog(QDialog):
         self.resize(840, 540)
         outer = QVBoxLayout(self)
         explanation = (
-            "Change the saved name, wording, sections, or order. Editing wording here detaches that block from future library updates."
-            if cv else f"This CV will snapshot {profile['name']}'s current details and selected sections."
+            "Change the name, content, sections, or order. Editing a section here stops future library updates from changing it."
+            if cv else f"This CV will copy {profile['name']}'s current details. Selected library sections remain linked until you edit them."
         )
         outer.addWidget(title(self.windowTitle(), explanation))
         form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name); outer.addLayout(form)
@@ -383,7 +383,7 @@ class MainWindow(QMainWindow):
 
     def overview_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(14)
-        layout.addWidget(title("Your application pipeline", "Stay deliberate about each application and the CV that went with it."))
+        layout.addWidget(title("Application pipeline", "Track each role, its progress, and the CV you used."))
         grid = QGridLayout(); grid.setSpacing(12); self.status_cards = {}
         for index, status in enumerate(STATUSES):
             self.status_cards[status] = self.card(status); grid.addWidget(self.status_cards[status], index // 3, index % 3)
@@ -394,8 +394,8 @@ class MainWindow(QMainWindow):
 
     def applications_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Applications", "Search every saved field, update progress, and review the exact CV, posting, and notes for each submission.")); header.addStretch(); add = QPushButton("Add application"); edit = secondary_button("Edit"); open_posting = secondary_button("Open posting"); export_csv = secondary_button("Export CSV"); delete = secondary_button("Delete"); delete.setProperty("danger", True); add.clicked.connect(self.new_application); edit.clicked.connect(self.edit_application); open_posting.clicked.connect(self.open_selected_posting); export_csv.clicked.connect(self.export_applications_csv); delete.clicked.connect(self.delete_application); header.addWidget(add); header.addWidget(edit); header.addWidget(open_posting); header.addWidget(export_csv); header.addWidget(delete); layout.addLayout(header)
-        self.application_search = QLineEdit(); self.application_search.setPlaceholderText("Search company, role, location, or status…"); self.application_search.textChanged.connect(self.refresh_applications); layout.addWidget(self.application_search)
+        header = QHBoxLayout(); header.addWidget(title("Applications", "Update progress and review the saved CV, posting, and notes for each role.")); header.addStretch(); add = QPushButton("Add application"); edit = secondary_button("Edit"); open_posting = secondary_button("Open posting"); export_csv = secondary_button("Export CSV"); delete = secondary_button("Delete"); delete.setProperty("danger", True); add.clicked.connect(self.new_application); edit.clicked.connect(self.edit_application); open_posting.clicked.connect(self.open_selected_posting); export_csv.clicked.connect(self.export_applications_csv); delete.clicked.connect(self.delete_application); header.addWidget(add); header.addWidget(edit); header.addWidget(open_posting); header.addWidget(export_csv); header.addWidget(delete); layout.addLayout(header)
+        self.application_search = QLineEdit(); self.application_search.setPlaceholderText("Search company, role, location, status, notes, or posting URL…"); self.application_search.textChanged.connect(self.refresh_applications); layout.addWidget(self.application_search)
         self.application_table = self.table(["Company", "Role", "Location", "Applied", "Status", "CV used"]); self.application_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.application_table.itemDoubleClicked.connect(lambda _: self.edit_application()); self.application_table.itemSelectionChanged.connect(self.refresh_application_details); layout.addWidget(self.application_table, 1)
         application_card, self.application_detail_labels = self.detail_card([
             ("job", "Selected job"), ("timeline", "Application"), ("cv", "CV snapshot"),
@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
 
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Every CV keeps its own contact details and section content, so submitted versions stay reproducible.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
+        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library sections update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
         self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
             ("identity", "Snapshot"), ("contact", "Contact details"), ("sections", "Section order"),
@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
     def tree_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout()
-        header.addWidget(title("CV tree", "Edit a CV as a hierarchy: CV → sections → entries → bullet points."))
+        header.addWidget(title("CV tree", "Edit a CV by section, entry, and bullet point."))
         header.addStretch()
         self.tree_cv_picker = QComboBox(); self.tree_cv_picker.setMinimumWidth(240)
         self.tree_cv_picker.currentIndexChanged.connect(self.load_cv_tree)
@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
             button = QPushButton(text) if primary else secondary_button(text)
             button.clicked.connect(action); actions.addWidget(button)
         actions.addStretch(); layout.addLayout(actions)
-        hint = QLabel("Double-click a value to edit it. Job labels come from linked library sections and are read-only here. Markdown is preserved, including **bold**, *italic*, links, and the leading - on bullets.")
+        hint = QLabel("Double-click a value to edit it. Job labels are read-only. Markdown formatting, links, and bullet markers are preserved.")
         hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
         return page
 
@@ -660,7 +660,7 @@ class MainWindow(QMainWindow):
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Section library", "Double-click the exact section, entry, organization, or bullet you want to edit.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("See MD preview"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
+        header = QHBoxLayout(); header.addWidget(title("Section library", "Edit reusable sections here. Changes update CVs that still use the linked section.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
         self.section_tree = QTreeWidget()
         self.section_tree.setColumnCount(4); self.section_tree.setHeaderLabels(["Section / node", "Value / category", "Job labels", "Words"])
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
@@ -673,7 +673,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.section_tree, 1)
         editor = QFrame(); editor.setProperty("card", True)
         editor_layout = QVBoxLayout(editor); editor_layout.setContentsMargins(18, 14, 18, 16); editor_layout.setSpacing(10)
-        editor_heading = QLabel("Selected section document preview"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
+        editor_heading = QLabel("Selected section Markdown"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
         fields = QHBoxLayout()
         self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("Section title")
         self.section_editor_category = QComboBox(); self.section_editor_category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"]); self.section_editor_category.setEditable(True)
@@ -686,7 +686,7 @@ class MainWindow(QMainWindow):
         self.section_content_editor.setReadOnly(True)
         self.section_content_editor.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
         editor_layout.addWidget(self.section_content_editor)
-        editor_hint = QLabel("Double-click values in the hierarchy to edit them. This preview shows the complete Markdown document that will be saved.")
+        editor_hint = QLabel("Double-click a value in the hierarchy to edit it. This view shows the complete Markdown that will be saved.")
         editor_hint.setProperty("muted", True); editor_layout.addWidget(editor_hint)
         self.section_preview_widget = editor; editor.hide(); layout.addWidget(editor)
         return page
@@ -694,11 +694,11 @@ class MainWindow(QMainWindow):
     def toggle_section_preview(self) -> None:
         show_preview = self.section_preview_widget.isHidden()
         self.section_preview_widget.setVisible(show_preview)
-        self.section_preview_button.setText("Hide MD preview" if show_preview else "See MD preview")
+        self.section_preview_button.setText("Hide Markdown" if show_preview else "Show Markdown")
 
     def profile_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
-        layout.addWidget(title("Personal details", "Shown in the masthead of every newly created CV."))
+        layout.addWidget(title("Personal details", "Used for new CVs; existing CVs keep the details saved with them."))
         card = QFrame(); card.setProperty("card", True); form = QFormLayout(card); form.setContentsMargins(22, 22, 22, 22); self.profile_labels = {}
         for key, label in [("name", "Name"), ("phone", "Phone"), ("email", "Email"), ("github", "GitHub"), ("website", "Website")]:
             value = QLabel(); value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); self.profile_labels[key] = value; form.addRow(label, value)
@@ -707,13 +707,13 @@ class MainWindow(QMainWindow):
 
     def capture_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
-        layout.addWidget(title("Safari capture", "Receive a completed application from a companion Safari Web Extension on this Mac."))
+        layout.addWidget(title("Safari capture", "Save a job from the companion Safari extension to this Mac."))
         card = QFrame(); card.setProperty("card", True); form = QFormLayout(card); form.setContentsMargins(22, 22, 22, 22)
         self.capture_status = QLabel(); self.capture_endpoint = QLineEdit(); self.capture_endpoint.setReadOnly(True); self.capture_token = QLineEdit(); self.capture_token.setReadOnly(True)
         form.addRow("Status", self.capture_status); form.addRow("Local endpoint", self.capture_endpoint); form.addRow("Extension token", self.capture_token)
         layout.addWidget(card)
         actions = QHBoxLayout(); self.capture_toggle = QPushButton(); copy_endpoint = secondary_button("Copy endpoint"); copy_token = secondary_button("Copy token"); self.capture_toggle.clicked.connect(self.toggle_capture_bridge); copy_endpoint.clicked.connect(lambda: self.copy_capture_value(self.capture_endpoint.text())); copy_token.clicked.connect(lambda: self.copy_capture_value(self.capture_token.text())); actions.addWidget(self.capture_toggle); actions.addWidget(copy_endpoint); actions.addWidget(copy_token); actions.addStretch(); layout.addLayout(actions)
-        guide = QLabel("The extension sends a POST request to the local endpoint with the X-CV-Manager-Token header. The app accepts only loopback requests, requires the token, and saves captured applications as Applied for review.")
+        guide = QLabel("Start the bridge, then copy the endpoint and token into the extension. Captured jobs are saved as Applied for review. The bridge accepts only local requests with this token.")
         guide.setWordWrap(True); guide.setProperty("muted", True); layout.addWidget(guide); layout.addStretch(); self.refresh_capture_status()
         return page
 
@@ -854,7 +854,7 @@ class MainWindow(QMainWindow):
         self.section_preview_button.setEnabled(enabled)
         if not enabled:
             self.section_preview_widget.hide()
-            self.section_preview_button.setText("See MD preview")
+            self.section_preview_button.setText("Show Markdown")
         self.section_editor_title.setEnabled(enabled)
         self.section_editor_category.setEnabled(False)
         self.section_editor_labels.setEnabled(enabled)

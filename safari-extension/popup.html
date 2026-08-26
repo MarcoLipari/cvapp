@@ -11,23 +11,23 @@
       <header>
         <span class="eyebrow">CV MANAGER</span>
         <h1>Capture application</h1>
-        <p>Save this job posting to your local tracker.</p>
+        <p>Save this job to CV Manager on this Mac.</p>
       </header>
 
       <form id="capture-form">
         <label>Company <input id="company" name="company" required autofocus></label>
         <label>Role <input id="role" name="role" required></label>
         <label>Location <input id="location" name="location" placeholder="Montreal, QC"></label>
-        <label>Posting URL <input id="posting-url" name="posting-url" type="url"></label>
-        <label>Notes <textarea id="notes" name="notes" rows="3" placeholder="Optional"></textarea></label>
-        <button type="submit">Save to CV Manager</button>
+        <label>Job posting URL <input id="posting-url" name="posting-url" type="url"></label>
+        <label>Notes <textarea id="notes" name="notes" rows="3" placeholder="Optional notes or next steps"></textarea></label>
+        <button type="submit">Save application</button>
         <p id="status" role="status"></p>
       </form>
 
       <details>
-        <summary>Connection settings</summary>
+        <summary>CV Manager connection</summary>
         <label>Local endpoint <input id="endpoint" type="url" placeholder="http://127.0.0.1:12345/v1/applications"></label>
-        <label>Extension token <input id="token" type="password" placeholder="Copy from CV Manager"></label>
+        <label>Extension token <input id="token" type="password" placeholder="Copy from Safari Capture"></label>
         <button id="save-settings" type="button" class="secondary">Save settings</button>
       </details>
     </main>
