@@ -7,17 +7,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 STATUSES = ("Applied", "Interviewing", "Offer", "Rejected", "Withdrawn")
 DEFAULT_PROFILE = {
-    "name": "CV Manager User",
-    "phone": "(555) 010-1234",
-    "email": "user@example.com",
-    "github": "github.com/example-user",
-    "website": "portfolio.example.com",
+    "name": "",
+    "phone": "",
+    "email": "",
+    "github": "",
+    "website": "",
 }
 
 
@@ -63,11 +65,16 @@ class CVDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as db:
@@ -147,6 +154,11 @@ class CVDatabase:
             rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'profile.%'").fetchall()
         saved = {row["key"].removeprefix("profile."): row["value"] for row in rows}
         return DEFAULT_PROFILE | saved
+
+    def profile_is_configured(self) -> bool:
+        """Return whether the required first-run profile fields were saved."""
+        profile = self.get_profile()
+        return bool(profile["name"].strip() and profile["email"].strip())
 
     def update_profile(self, profile: dict[str, str]) -> None:
         values = {key: str(profile.get(key, "")).strip() for key in DEFAULT_PROFILE}

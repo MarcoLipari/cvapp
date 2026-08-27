@@ -2,6 +2,12 @@
 
 A local macOS desktop app for tracking job applications and building tailored CV snapshots.
 
+## Supported systems
+
+The initial production target is **macOS 13 Ventura or newer on Apple silicon**. Intel Macs and iOS are not supported by the initial release. Release builds should be produced and tested as `arm64`; broader architecture support can be added after a separate Intel build and clean-device test pass are in place.
+
+CV Manager stores its database, exports, backups, bridge files, and diagnostic logs locally on the Mac. On first launch, it asks for the personal details to use in new CVs; the source code contains no prefilled personal profile.
+
 ## Run
 
 ```bash
@@ -9,6 +15,8 @@ A local macOS desktop app for tracking job applications and building tailored CV
 ```
 
 Your database and exports are stored in the macOS Application Support directory for CV Manager.
+
+Diagnostic logs are stored in the app's `logs` folder under Application Support. Logs rotate automatically and retain up to five previous 1 MB files.
 
 Use **Export full backup** in Personal Details to create a portable JSON copy of your profile, reusable sections, CV snapshots, and applications. Use **Export CSV** on Applications when you want to analyze or share the application tracker.
 

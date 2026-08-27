@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
+import platform
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QSize, QStandardPaths, Qt, QTimer, QUrl
@@ -48,6 +51,44 @@ APP_STYLESHEET = """
 
 TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
 TREE_DATA_ROLE = TREE_KIND_ROLE + 1
+LOGGER = logging.getLogger("cv_manager")
+
+
+def configure_logging(data_dir: Path) -> Path:
+    """Write durable, size-limited diagnostics without requiring a console."""
+    log_dir = data_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "cv-manager.log"
+    handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=5, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    LOGGER.setLevel(logging.INFO)
+    for existing_handler in LOGGER.handlers:
+        existing_handler.close()
+    LOGGER.handlers.clear()
+    LOGGER.addHandler(handler)
+    LOGGER.propagate = False
+    LOGGER.info("Starting CV Manager %s on macOS %s (%s)", "0.1.0", platform.mac_ver()[0], platform.machine())
+    return log_path
+
+
+def install_exception_handler(log_path: Path) -> None:
+    """Record uncaught failures and give GUI users a useful recovery path."""
+    previous_hook = sys.excepthook
+
+    def handle_exception(exception_type, exception, traceback) -> None:
+        if issubclass(exception_type, KeyboardInterrupt):
+            previous_hook(exception_type, exception, traceback)
+            return
+        LOGGER.critical("Unhandled exception", exc_info=(exception_type, exception, traceback))
+        if QApplication.instance() is not None:
+            QMessageBox.critical(
+                None,
+                "CV Manager encountered an error",
+                "An unexpected error occurred. Your data remains stored locally.\n\n"
+                f"Diagnostic log:\n{log_path}",
+            )
+
+    sys.excepthook = handle_exception
 
 
 class ExistingTextEditDelegate(QStyledItemDelegate):
@@ -134,12 +175,17 @@ def secondary_button(text: str) -> QPushButton:
 
 
 class ProfileDialog(QDialog):
-    def __init__(self, profile: dict[str, str], parent=None):
+    def __init__(self, profile: dict[str, str], parent=None, first_run: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Personal details")
+        self.setWindowTitle("Welcome to CV Manager" if first_run else "Personal details")
         self.setMinimumWidth(460)
         layout = QVBoxLayout(self)
-        layout.addWidget(title("Personal details", "These details are copied into each new CV and do not change afterward."))
+        subtitle = (
+            "Add the contact details to use in new CVs. You can change them later."
+            if first_run else
+            "These details are copied into each new CV and do not change afterward."
+        )
+        layout.addWidget(title(self.windowTitle(), subtitle))
         form = QFormLayout()
         self.fields = {}
         labels = {"name": "Full name", "phone": "Phone", "email": "Email", "github": "GitHub display URL", "website": "Website display URL"}
@@ -357,8 +403,6 @@ class MainWindow(QMainWindow):
         self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Integration"])
         nav_panel = QWidget(); nav_layout = QVBoxLayout(nav_panel); nav_layout.setContentsMargins(0, 0, 0, 0); nav_layout.setSpacing(0)
         nav_layout.addWidget(self.nav, 1)
-        attribution = QLabel("© CV Manager User"); attribution.setProperty("attribution", True); attribution.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        nav_layout.addWidget(attribution)
         self.pages = QStackedWidget()
         for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.tree_page(), self.sections_page(), self.profile_page(), self.capture_page()):
             self.pages.addWidget(page)
@@ -367,6 +411,7 @@ class MainWindow(QMainWindow):
         refresh = QAction("Refresh", self); refresh.setShortcut("Cmd+R"); refresh.triggered.connect(self.refresh_all); self.menuBar().addAction(refresh)
         self.safari_timer = QTimer(self); self.safari_timer.timeout.connect(self.poll_safari_bridge); self.safari_timer.start(1000)
         self.nav.setCurrentRow(0); self.refresh_all(); self.poll_safari_bridge()
+        QTimer.singleShot(0, self.prompt_for_initial_profile)
 
     def card(self, caption: str) -> QLabel:
         card = QLabel(caption); card.setProperty("card", True); card.setMinimumHeight(86); card.setAlignment(Qt.AlignmentFlag.AlignCenter); card.setStyleSheet("font-size: 15px; font-weight: 600; padding: 8px;")
@@ -923,6 +968,17 @@ class MainWindow(QMainWindow):
         dialog = ProfileDialog(self.db.get_profile(), self)
         if dialog.exec(): self.db.update_profile(dialog.values()); self.refresh_all()
 
+    def prompt_for_initial_profile(self) -> None:
+        if self.db.profile_is_configured():
+            return
+        dialog = ProfileDialog(self.db.get_profile(), self, first_run=True)
+        if dialog.exec():
+            self.db.update_profile(dialog.values())
+            self.refresh_all()
+            self.statusBar().showMessage("Personal details saved. You can now build a CV.", 6000)
+        else:
+            self.statusBar().showMessage("Complete Personal Details before building a CV.", 10000)
+
     def new_section(self) -> None:
         dialog = SectionDialog(parent=self)
         if dialog.exec(): self.db.create_section(*dialog.values()); self.refresh_all()
@@ -1089,6 +1145,10 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Backup exported", "Your CVs, sections, applications, and profile were exported as JSON.")
 
     def new_cv(self) -> None:
+        if not self.db.profile_is_configured():
+            self.prompt_for_initial_profile()
+            if not self.db.profile_is_configured():
+                return
         sections = self.db.list_sections()
         if not sections: QMessageBox.information(self, "Add content first", "Create at least one reusable section before building a CV."); return
         profile = self.db.get_profile(); dialog = CVDialog(sections, profile, parent=self)
@@ -1161,6 +1221,23 @@ class MainWindow(QMainWindow):
     def open_export_folder(self) -> None:
         export_dir = self.data_dir / "exports"; export_dir.mkdir(exist_ok=True); QDesktopServices.openUrl(QUrl.fromLocalFile(str(export_dir)))
 
+def run() -> int:
+    app = QApplication(sys.argv)
+    app.setOrganizationName("CV Manager")
+    app.setOrganizationDomain("cvmanager.app")
+    app.setApplicationName("CV Manager")
+    app.setApplicationVersion("0.1.0")
+    app.setStyleSheet(APP_STYLESHEET)
+    log_path = configure_logging(app_data_dir())
+    install_exception_handler(log_path)
+    try:
+        window = MainWindow()
+        window.show()
+        return app.exec()
+    except Exception:
+        sys.excepthook(*sys.exc_info())
+        return 1
+
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv); app.setOrganizationName("CV Manager"); app.setApplicationName("CV Manager"); app.setStyleSheet(APP_STYLESHEET)
-    window = MainWindow(); window.show(); sys.exit(app.exec())
+    sys.exit(run())

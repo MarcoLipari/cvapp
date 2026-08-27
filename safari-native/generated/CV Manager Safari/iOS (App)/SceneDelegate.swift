@@ -2,7 +2,7 @@
 //  SceneDelegate.swift
 //  iOS (App)
 //
-//  Created by CV Manager User on 2026-08-26.
+//  CV Manager Safari host.
 //
 
 import UIKit

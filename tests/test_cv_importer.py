@@ -3,10 +3,10 @@ import unittest
 from cv_importer import parse_cv_text
 
 
-SAMPLE_CV = """CV MANAGER USER
-(555) 010-1234 | user@example.com | github.com/example-user | portfolio.example.com
+SAMPLE_CV = """ADA LOVELACE
+(555) 010-1234 | ada@example.com | github.com/example-user | portfolio.example.com
 EDUCATION
-Example University, Montreal, QC                    Sep 2025 - Jun 2028
+Example University, Toronto, ON                    Sep 2025 - Jun 2028
 B.Sc. Honours Computer Science
 EXPERIENCE
 Data Engineering Intern                            May 2026 - Present
@@ -23,8 +23,8 @@ Technical: Python, SQL
 class CVImporterTests(unittest.TestCase):
     def test_imports_profile_and_reusable_sections(self):
         result = parse_cv_text(SAMPLE_CV)
-        self.assertEqual(result.profile["name"], "CV Manager User")
-        self.assertEqual(result.profile["email"], "user@example.com")
+        self.assertEqual(result.profile["name"], "Ada Lovelace")
+        self.assertEqual(result.profile["email"], "ada@example.com")
         self.assertEqual(result.profile["phone"], "(555) 010-1234")
         self.assertEqual(result.profile["website"], "portfolio.example.com")
         self.assertEqual([section.category for section in result.sections], ["Education", "Experience", "Skills"])

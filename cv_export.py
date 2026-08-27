@@ -14,8 +14,6 @@ from database import CV, DEFAULT_PROFILE
 REFERENCE_LINKS = {
     "OpenLineage": "https://github.com/OpenLineage/OpenLineage/tree/main",
     "Marquez": "https://github.com/MarquezProject/marquez",
-    "Remote Desktop Control via AI agent - Example CodeJam 2025 Winner": "https://github.com/example-user/remoto",
-    "Fine-tuned Transformers Model for Text Classification": "https://github.com/example-user/MAIS202-project",
 }
 
 
@@ -151,7 +149,7 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
     from PySide6.QtGui import QFont, QFontMetricsF, QTextDocument
 
     page_width, page_height = 612.0, 792.0  # US Letter at the writer's 72dpi resolution.
-    # Measured from example-userCV.pdf (all values are PDF points).
+    # Measured from the reference CV (all values are PDF points).
     left, right, top, bottom = 35.76, 37.92, 10.0, 17.0
     content_width = page_width - left - right
 

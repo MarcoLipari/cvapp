@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from cv_export import render_markdown
@@ -21,7 +22,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("Swift and Rust", render_markdown(saved))
         self.assertIsNone(saved.markdown_path)
         self.assertIsNone(saved.pdf_path)
-        self.assertTrue(render_markdown(saved).startswith("# CV MANAGER USER"))
+        self.assertTrue(render_markdown(saved).startswith("# \n"))
+
+    def test_new_profile_is_blank_until_onboarding_is_completed(self):
+        self.assertEqual(
+            self.db.get_profile(),
+            {"name": "", "phone": "", "email": "", "github": "", "website": ""},
+        )
+        self.assertFalse(self.db.profile_is_configured())
+
+        self.db.update_profile({"name": "Test Person", "email": "test@example.com"})
+
+        self.assertTrue(self.db.profile_is_configured())
 
     def test_section_labels_are_library_only_metadata(self):
         section_id = self.db.create_section("Skills", "Skills", "Python and SQL", "data, backend")
@@ -116,23 +128,25 @@ class DatabaseTests(unittest.TestCase):
 
     def test_existing_database_is_migrated_without_losing_records(self):
         legacy_path = Path(self.temp.name) / "legacy.sqlite3"
-        with sqlite3.connect(legacy_path) as legacy:
-            legacy.executescript("""
+        with closing(sqlite3.connect(legacy_path)) as legacy:
+            with legacy:
+                legacy.executescript("""
                 CREATE TABLE cvs (id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, sections_json TEXT NOT NULL, markdown_path TEXT, pdf_path TEXT);
                 CREATE TABLE applications (id INTEGER PRIMARY KEY, company TEXT NOT NULL, role TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', application_date TEXT NOT NULL, status TEXT NOT NULL, cv_id INTEGER, notes TEXT NOT NULL DEFAULT '');
                 INSERT INTO cvs VALUES (1, 'Old CV', '2026-01-01T00:00:00', '[]', NULL, NULL);
                 INSERT INTO applications VALUES (1, 'Acme', 'Engineer', '', '2026-01-01', 'Applied', 1, '');
-            """)
+                """)
         migrated = CVDatabase(legacy_path)
-        self.assertEqual(migrated.get_cv(1).profile["name"], "CV Manager User")
+        self.assertEqual(migrated.get_cv(1).profile["name"], "")
         self.assertEqual(migrated.get_application(1).posting_url, "")
         self.assertEqual(migrated.get_application(1).capture_event_id, "")
         self.assertEqual(migrated.get_application(1).posting_snapshot_json, "")
 
     def test_existing_sections_gain_empty_labels(self):
         legacy_path = Path(self.temp.name) / "legacy-sections.sqlite3"
-        with sqlite3.connect(legacy_path) as legacy:
-            legacy.executescript("""
+        with closing(sqlite3.connect(legacy_path)) as legacy:
+            with legacy:
+                legacy.executescript("""
                 CREATE TABLE sections (
                     id INTEGER PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -141,7 +155,7 @@ class DatabaseTests(unittest.TestCase):
                     sort_order INTEGER NOT NULL DEFAULT 0
                 );
                 INSERT INTO sections VALUES (1, 'Skills', 'Skills', 'Python', 0);
-            """)
+                """)
 
         migrated = CVDatabase(legacy_path)
 
