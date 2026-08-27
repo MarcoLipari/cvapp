@@ -17,3 +17,4 @@ button:disabled { cursor: default; opacity: .65; }
 #status { min-height: 17px; }
 #status.error { color: #b91c1c; }
 #status.success { color: #15803d; }
+footer { color: #94a3b8; font-size: 10px; padding-top: 12px; text-align: center; }

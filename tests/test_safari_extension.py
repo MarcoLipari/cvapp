@@ -28,6 +28,13 @@ class SafariExtensionAssetsTests(unittest.TestCase):
         self.assertIn('type: "attachCv"', popup)
         self.assertNotIn("X-CV-Manager-Token", popup)
 
+    def test_workday_application_submissions_are_detected(self):
+        content = (ROOT / "content.js").read_text()
+        self.assertIn('url.hostname.endsWith(".myworkdayjobs.com")', content)
+        self.assertIn('/\\/job\\/.*\\/apply(?:\\/|$)/i', content)
+        self.assertIn('armed_url: location.href', content)
+        self.assertIn('/\\bcongratulations\\b/i', content)
+
 
 if __name__ == "__main__":
     unittest.main()

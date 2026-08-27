@@ -42,6 +42,7 @@ APP_STYLESHEET = """
     QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QDateEdit:focus { border: 2px solid #60a5fa; }
     QLabel[pageTitle="true"] { font-size: 26px; font-weight: 700; color: #0f172a; }
     QLabel[muted="true"] { color: #64748b; }
+    QLabel[attribution="true"] { color: #94a3b8; font-size: 11px; padding: 5px 8px 0; }
     QFrame[card="true"] { background: white; border: 1px solid #e2e8f0; border-radius: 12px; }
 """
 
@@ -354,11 +355,15 @@ class MainWindow(QMainWindow):
 
         self.nav = QListWidget(); self.nav.setFixedWidth(205)
         self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Integration"])
+        nav_panel = QWidget(); nav_layout = QVBoxLayout(nav_panel); nav_layout.setContentsMargins(0, 0, 0, 0); nav_layout.setSpacing(0)
+        nav_layout.addWidget(self.nav, 1)
+        attribution = QLabel("© CV Manager User"); attribution.setProperty("attribution", True); attribution.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        nav_layout.addWidget(attribution)
         self.pages = QStackedWidget()
         for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.tree_page(), self.sections_page(), self.profile_page(), self.capture_page()):
             self.pages.addWidget(page)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
-        shell = QWidget(); layout = QHBoxLayout(shell); layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(18); layout.addWidget(self.nav); layout.addWidget(self.pages, 1); self.setCentralWidget(shell)
+        shell = QWidget(); layout = QHBoxLayout(shell); layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(18); layout.addWidget(nav_panel); layout.addWidget(self.pages, 1); self.setCentralWidget(shell)
         refresh = QAction("Refresh", self); refresh.setShortcut("Cmd+R"); refresh.triggered.connect(self.refresh_all); self.menuBar().addAction(refresh)
         self.safari_timer = QTimer(self); self.safari_timer.timeout.connect(self.poll_safari_bridge); self.safari_timer.start(1000)
         self.nav.setCurrentRow(0); self.refresh_all(); self.poll_safari_bridge()

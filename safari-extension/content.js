@@ -185,20 +185,33 @@
     return `${button?.textContent || ""} ${button?.value || ""} ${button?.getAttribute?.("aria-label") || ""}`.replace(/\s+/g, " ").trim();
   }
 
+  function isWorkdayApplication(value = location.href) {
+    const url = new URL(value, location.href);
+    const workdayHost = url.hostname === "myworkdayjobs.com" || url.hostname.endsWith(".myworkdayjobs.com");
+    return workdayHost && /\/job\/.*\/apply(?:\/|$)/i.test(url.pathname);
+  }
+
   function looksFinal(text, form) {
     if (/submit (your )?application|send (your )?application|complete application|finish application/i.test(text)) return true;
-    return /^submit$/i.test(text) && Boolean(form?.querySelector('input[type="file"], input[name*="resume" i], input[name*="cv" i]'));
+    return /^submit$/i.test(text) && (isWorkdayApplication()
+      || Boolean(form?.querySelector('input[type="file"], input[name*="resume" i], input[name*="cv" i]')));
   }
 
   async function armSubmission() {
-    await send({ type: "rememberCandidate", candidate: { ...extractCandidate(), armed_at: Date.now() } });
+    await send({ type: "rememberCandidate", candidate: { ...extractCandidate(), armed_at: Date.now(), armed_url: location.href } });
     scheduleConfirmationCheck(500);
   }
 
-  function confirmationVisible() {
+  function confirmationVisible(candidate) {
     const text = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 80_000) || "";
-    return /application (?:has been )?submitted|application received|thank you for (?:your application|applying)|successfully (?:submitted|applied)|we(?:'|’)ve received your application/i.test(text)
-      || /(?:application-)?(?:confirmation|submitted|thank-you)/i.test(location.pathname);
+    if (/application (?:has been )?submitted|application received|thank you for (?:your application|applying)|successfully (?:submitted|applied)|we(?:'|’)ve received your application/i.test(text)
+      || /(?:application-)?(?:confirmation|submitted|thank-you)/i.test(location.pathname)) return true;
+
+    if (!isWorkdayApplication(candidate?.armed_url)) return false;
+    if (/\bcongratulations\b/i.test(text)) return true;
+    const authenticationPage = /\/(?:login|createAccount|forgotPassword)(?:\/|$)/i.test(location.pathname);
+    return !authenticationPage && !isWorkdayApplication()
+      && Date.now() - Number(candidate?.armed_at || 0) < 5 * 60 * 1000;
   }
 
   function scheduleConfirmationCheck(delay = 800) {
@@ -207,11 +220,12 @@
   }
 
   async function checkConfirmation() {
-    if (!confirmationVisible()) return;
     const remembered = await send({ type: "getCandidate" });
     const armedAt = Number(remembered?.candidate?.armed_at || 0);
     if (!armedAt || Date.now() - armedAt > 2 * 60 * 60 * 1000) return;
-    const response = await send({ type: "logDetected", candidate: extractCandidate() });
+    if (!confirmationVisible(remembered.candidate)) return;
+    const candidate = isWorkdayApplication(remembered.candidate.armed_url) ? {} : extractCandidate();
+    const response = await send({ type: "logDetected", candidate });
     if (response?.ok) showLoggedToast(response.event);
     else showMessageToast(response?.error || "Could not log this application.", true);
   }
