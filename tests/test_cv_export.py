@@ -21,11 +21,16 @@ class CVExportTests(unittest.TestCase):
             '<b><a href="https://example.com/project">Project</a></b>',
         )
 
-    def test_reference_links_are_clickable_without_rewriting_saved_snapshots(self):
-        rendered = _inline("Integrated OpenLineage and Marquez")
+    def test_users_can_add_their_own_links(self):
+        rendered = _inline("Built [My Project](https://example.com/my-project)")
 
-        self.assertIn('href="https://github.com/OpenLineage/OpenLineage/tree/main"', rendered)
-        self.assertIn('href="https://github.com/MarquezProject/marquez"', rendered)
+        self.assertEqual(
+            rendered,
+            'Built <a href="https://example.com/my-project">My Project</a>',
+        )
+
+    def test_plain_text_is_not_replaced_with_a_hardcoded_link(self):
+        self.assertEqual(_inline("Integrated OpenLineage and Marquez"), "Integrated OpenLineage and Marquez")
 
     def test_export_has_ats_readable_text_in_logical_order_and_metadata(self):
         cv = CV(

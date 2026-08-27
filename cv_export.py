@@ -9,14 +9,6 @@ from pathlib import Path
 from database import CV, DEFAULT_PROFILE
 
 
-# Link destinations present in the reference CV. Explicit Markdown links still
-# take precedence and are the supported way to add links to future entries.
-REFERENCE_LINKS = {
-    "OpenLineage": "https://github.com/OpenLineage/OpenLineage/tree/main",
-    "Marquez": "https://github.com/MarquezProject/marquez",
-}
-
-
 def render_markdown(cv: CV) -> str:
     """Render a CV snapshot as editable Markdown in the personal CV format."""
     profile = DEFAULT_PROFILE | cv.profile
@@ -40,12 +32,6 @@ def _inline(text: str) -> str:
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*", r"<i>\1</i>", escaped)
 
-    for label, url in REFERENCE_LINKS.items():
-        escaped_label = html.escape(label)
-        escaped = escaped.replace(
-            escaped_label,
-            f'<a href="{html.escape(url, quote=True)}">{escaped_label}</a>',
-        )
     for index, (label, url) in enumerate(links):
         escaped = escaped.replace(
             f"@@CVLINK{index}@@",

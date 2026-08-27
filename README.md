@@ -37,7 +37,7 @@ Select any application, CV, or library section to see its complete details below
 
 ### Import an existing CV
 
-In **Section Library**, choose **Import CV** and select a PDF, Markdown, or text CV. The importer recognizes standard headings such as Education, Experience, Projects, and Skills; preserves bullets; and converts right-hand date/location columns into the app's export syntax. Review the detected sections before saving them. Updating Personal Details is opt-in, so importing a CV does not overwrite your current profile by default.
+In **Section Library**, choose **Import CV** and select a PDF, Markdown, or text CV. The importer recognizes standard headings such as Education, Experience, Projects, and Skills; preserves bullets and links in entry titles and bullet text; and converts right-hand date/location columns into the app's export syntax. Review the detected sections before saving them. Updating Personal Details is opt-in, so importing a CV does not overwrite your current profile by default.
 
 ### Section formatting
 

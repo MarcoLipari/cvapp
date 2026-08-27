@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,7 +55,66 @@ def extract_cv_text(path: str | Path) -> str:
 
 
 def import_cv(path: str | Path) -> ImportResult:
-    return parse_cv_text(extract_cv_text(path))
+    source = Path(path)
+    text = extract_cv_text(source)
+    if source.suffix.lower() == ".pdf" and shutil.which("pdftohtml"):
+        text = _restore_pdf_links(text, _extract_pdf_links(source))
+    return parse_cv_text(text)
+
+
+def _extract_pdf_links(path: Path) -> list[tuple[str, str]]:
+    """Return visible labels and destinations from PDF link annotations."""
+    result = subprocess.run(
+        ["pdftohtml", "-xml", "-stdout", "-i", "-hidden", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode or not result.stdout.strip():
+        return []
+    try:
+        root = ET.fromstring(result.stdout)
+    except ET.ParseError:
+        return []
+
+    links: list[tuple[str, str]] = []
+    for page in root.findall("page"):
+        fragments: dict[tuple[str, str], list[tuple[int, str]]] = {}
+        for text_node in page.findall("text"):
+            top = text_node.get("top", "")
+            left = int(text_node.get("left", "0"))
+            for anchor in text_node.iter("a"):
+                href = anchor.get("href", "")
+                if href.startswith(("http://", "https://")):
+                    fragments.setdefault((top, href), []).append(
+                        (left, "".join(anchor.itertext()))
+                    )
+        for (_, href), pieces in fragments.items():
+            label = re.sub(r"\s+", " ", "".join(
+                text for _, text in sorted(pieces)
+            )).strip()
+            if label:
+                links.append((label, href))
+    return links
+
+
+def _restore_pdf_links(text: str, links: list[tuple[str, str]]) -> str:
+    """Restore PDF annotations as Markdown links in imported section content."""
+    lines = text.splitlines(keepends=True)
+    first_heading = next(
+        (index for index, line in enumerate(lines) if _heading(line)),
+        len(lines),
+    )
+    header = "".join(lines[:first_heading])
+    content = "".join(lines[first_heading:])
+    for label, url in links:
+        content = re.sub(
+            rf"(?<!\w){re.escape(label)}(?!\w)",
+            lambda _: f"[{label}]({url})",
+            content,
+            count=1,
+        )
+    return header + content
 
 
 def parse_cv_text(text: str) -> ImportResult:
