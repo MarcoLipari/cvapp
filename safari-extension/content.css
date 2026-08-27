@@ -1,0 +1,58 @@
+.cv-manager-picker-button {
+  appearance: none !important;
+  background: #1d4ed8 !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  display: inline-block !important;
+  font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif !important;
+  margin: 6px !important;
+  padding: 9px 12px !important;
+}
+
+.cv-manager-chooser,
+.cv-manager-toast {
+  all: initial;
+  background: #fff !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 18px 50px rgb(15 23 42 / 24%) !important;
+  box-sizing: border-box !important;
+  color: #172033 !important;
+  display: grid !important;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif !important;
+  gap: 10px !important;
+  max-width: calc(100vw - 32px) !important;
+  padding: 16px !important;
+  position: fixed !important;
+  right: 18px !important;
+  top: 18px !important;
+  width: 340px !important;
+  z-index: 2147483647 !important;
+}
+
+.cv-manager-chooser strong,
+.cv-manager-toast strong { font-size: 16px !important; font-weight: 750 !important; }
+.cv-manager-toast span { color: #475569 !important; }
+.cv-manager-error { border-color: #fecaca !important; }
+.cv-manager-close {
+  background: transparent !important; border: 0 !important; color: #64748b !important; cursor: pointer !important;
+  font: 24px/1 sans-serif !important; padding: 4px !important; position: absolute !important; right: 8px !important; top: 7px !important;
+}
+.cv-manager-chooser-list { display: grid !important; gap: 6px !important; max-height: 320px !important; overflow: auto !important; }
+.cv-manager-cv-option,
+.cv-manager-toast-actions button,
+.cv-manager-edit-form button {
+  background: #1d4ed8 !important; border: 0 !important; border-radius: 6px !important; color: #fff !important;
+  cursor: pointer !important; font: 650 13px/1.2 -apple-system, sans-serif !important; padding: 8px 10px !important; text-align: left !important;
+}
+.cv-manager-cv-option:disabled { cursor: default !important; opacity: .7 !important; }
+.cv-manager-toast-actions { display: flex !important; gap: 7px !important; }
+.cv-manager-toast-actions button:last-child { background: #fff !important; border: 1px solid #cbd5e1 !important; color: #991b1b !important; }
+.cv-manager-edit-form { display: grid !important; gap: 7px !important; }
+.cv-manager-edit-form input,
+.cv-manager-edit-form select {
+  background: #fff !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; box-sizing: border-box !important;
+  color: #172033 !important; font: 13px -apple-system, sans-serif !important; padding: 8px !important; width: 100% !important;
+}

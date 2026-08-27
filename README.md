@@ -53,34 +53,20 @@ Use standard Markdown links for clickable blue, underlined text in the PDF:
 
 The PDF exporter always targets one US letter page. It uses the normal reference styling first, then progressively tightens spacing and type only when the selected content would overflow. If the content would become unreadable, export stops and asks you to shorten a section rather than generating a second page.
 
-## Safari capture handoff
+## Safari integration
 
-The **Safari Capture** page starts a local, authenticated endpoint for a future Safari Web Extension. It binds only to `127.0.0.1`; copy the endpoint and token into the extension's settings. The extension must send:
+CV Manager publishes exported PDFs to a private App Group folder shared with its native Safari Web Extension. There is no localhost server, copied endpoint, or token. The extension can:
 
-```http
-POST /v1/applications
-Content-Type: application/json
-X-CV-Manager-Token: <token shown by the app>
-```
+- show saved CVs beside résumé upload fields and attach one without browsing through Finder;
+- match a manually uploaded PDF to its CV Manager record;
+- detect likely successful application submissions and save the posting details and description;
+- show an in-page **Job logged** notice with Edit and **Don't log** actions; and
+- queue changes while the desktop app is closed.
 
-```json
-{
-  "company": "Example Co.",
-  "role": "Data Engineer",
-  "location": "Montreal, QC",
-  "posting_url": "https://example.com/careers/123",
-  "notes": "Optional note"
-}
-```
-
-`company` and `role` are required. Captured records enter the tracker as **Applied** and can then be linked to the CV you used.
+Open **Safari Integration** in CV Manager to see the shared catalog and queued-request status. Captured records enter the tracker as **Applied** and retain the exact CV selected in Safari.
 
 ### Build the Safari extension
 
-The companion source lives in [`safari-extension`](safari-extension). On a Mac with Xcode installed, create a Safari Web Extension App and replace its extension resources with that folder's contents (or use Xcode's Safari Web Extension conversion flow). Then:
+The web resources live in [`safari-extension`](safari-extension), and the native Swift message handler and entitlements live in [`safari-native`](safari-native). Full Xcode is required to convert and package the extension. Follow [`safari-native/README.md`](safari-native/README.md) once Xcode is installed.
 
-1. Open **Safari Capture** in CV Manager and click **Start capture bridge**.
-2. Copy the displayed endpoint and token into the extension's **Connection settings**.
-3. On a job page, click the Safari toolbar button, fill the company and role, then save.
-
-The popup automatically includes the active tab's URL. It never sends data to a remote service; it communicates only with CV Manager on `127.0.0.1`.
+The extension never sends CVs or job details to a CV Manager service. Native messages only read the shared CV catalog or append an application request to local App Group storage.

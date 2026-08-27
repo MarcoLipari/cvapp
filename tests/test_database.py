@@ -126,6 +126,8 @@ class DatabaseTests(unittest.TestCase):
         migrated = CVDatabase(legacy_path)
         self.assertEqual(migrated.get_cv(1).profile["name"], "CV Manager User")
         self.assertEqual(migrated.get_application(1).posting_url, "")
+        self.assertEqual(migrated.get_application(1).capture_event_id, "")
+        self.assertEqual(migrated.get_application(1).posting_snapshot_json, "")
 
     def test_existing_sections_gain_empty_labels(self):
         legacy_path = Path(self.temp.name) / "legacy-sections.sqlite3"

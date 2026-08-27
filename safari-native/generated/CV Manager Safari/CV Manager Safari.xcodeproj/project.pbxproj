@@ -1,0 +1,1017 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C7D2B404303FB4AC0083723B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B403303FB4AC0083723B /* AppDelegate.swift */; };
+		C7D2B406303FB4AC0083723B /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B405303FB4AC0083723B /* SceneDelegate.swift */; };
+		C7D2B409303FB4AC0083723B /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B407303FB4AC0083723B /* LaunchScreen.storyboard */; };
+		C7D2B40C303FB4AC0083723B /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B40A303FB4AC0083723B /* Main.storyboard */; };
+		C7D2B415303FB4AC0083723B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B414303FB4AC0083723B /* AppDelegate.swift */; };
+		C7D2B418303FB4AC0083723B /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B416303FB4AC0083723B /* Main.storyboard */; };
+		C7D2B41F303FB4AC0083723B /* CV Manager Safari Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7D2B41E303FB4AC0083723B /* CV Manager Safari Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C7D2B429303FB4AC0083723B /* CV Manager Safari Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7D2B428303FB4AC0083723B /* CV Manager Safari Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C7D2B42E303FB4AC0083723B /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F3303FB4AB0083723B /* Main.html */; };
+		C7D2B42F303FB4AC0083723B /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F3303FB4AB0083723B /* Main.html */; };
+		C7D2B430303FB4AC0083723B /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F5303FB4AB0083723B /* Icon.png */; };
+		C7D2B431303FB4AC0083723B /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F5303FB4AB0083723B /* Icon.png */; };
+		C7D2B432303FB4AC0083723B /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F6303FB4AB0083723B /* Style.css */; };
+		C7D2B433303FB4AC0083723B /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F6303FB4AB0083723B /* Style.css */; };
+		C7D2B434303FB4AC0083723B /* Script.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F7303FB4AB0083723B /* Script.js */; };
+		C7D2B435303FB4AC0083723B /* Script.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F7303FB4AB0083723B /* Script.js */; };
+		C7D2B436303FB4AC0083723B /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B3F8303FB4AB0083723B /* ViewController.swift */; };
+		C7D2B437303FB4AC0083723B /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B3F8303FB4AB0083723B /* ViewController.swift */; };
+		C7D2B438303FB4AC0083723B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F9303FB4AC0083723B /* Assets.xcassets */; };
+		C7D2B439303FB4AC0083723B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B3F9303FB4AC0083723B /* Assets.xcassets */; };
+		C7D2B43A303FB4AC0083723B /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B3FB303FB4AC0083723B /* SafariWebExtensionHandler.swift */; };
+		C7D2B43B303FB4AC0083723B /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D2B3FB303FB4AC0083723B /* SafariWebExtensionHandler.swift */; };
+		C7D2B454303FB4AD0083723B /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44D303FB4AD0083723B /* popup.js */; };
+		C7D2B455303FB4AD0083723B /* content.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44E303FB4AD0083723B /* content.css */; };
+		C7D2B456303FB4AD0083723B /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44F303FB4AD0083723B /* background.js */; };
+		C7D2B457303FB4AD0083723B /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B450303FB4AD0083723B /* popup.html */; };
+		C7D2B458303FB4AD0083723B /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B451303FB4AD0083723B /* manifest.json */; };
+		C7D2B459303FB4AD0083723B /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B452303FB4AD0083723B /* popup.css */; };
+		C7D2B45A303FB4AD0083723B /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B453303FB4AD0083723B /* content.js */; };
+		C7D2B45B303FB4AD0083723B /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44D303FB4AD0083723B /* popup.js */; };
+		C7D2B45C303FB4AD0083723B /* content.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44E303FB4AD0083723B /* content.css */; };
+		C7D2B45D303FB4AD0083723B /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B44F303FB4AD0083723B /* background.js */; };
+		C7D2B45E303FB4AD0083723B /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B450303FB4AD0083723B /* popup.html */; };
+		C7D2B45F303FB4AD0083723B /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B451303FB4AD0083723B /* manifest.json */; };
+		C7D2B460303FB4AD0083723B /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B452303FB4AD0083723B /* popup.css */; };
+		C7D2B461303FB4AD0083723B /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B453303FB4AD0083723B /* content.js */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C7D2B420303FB4AC0083723B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7D2B3ED303FB4AB0083723B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C7D2B41D303FB4AC0083723B;
+			remoteInfo = "CV Manager Safari Extension (iOS)";
+		};
+		C7D2B42A303FB4AC0083723B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7D2B3ED303FB4AB0083723B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C7D2B427303FB4AC0083723B;
+			remoteInfo = "CV Manager Safari Extension (macOS)";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C7D2B441303FB4AC0083723B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C7D2B41F303FB4AC0083723B /* CV Manager Safari Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B448303FB4AC0083723B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C7D2B429303FB4AC0083723B /* CV Manager Safari Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		C732F3E6303FB689000C432C /* CV Manager Safari (macOS).entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CV Manager Safari (macOS).entitlements"; sourceTree = "<group>"; };
+		C732F3E7303FB718000C432C /* CV Manager Safari Extension (macOS).entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CV Manager Safari Extension (macOS).entitlements"; sourceTree = "<group>"; };
+		C7D2B3F4303FB4AB0083723B /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
+		C7D2B3F5303FB4AB0083723B /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
+		C7D2B3F6303FB4AB0083723B /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
+		C7D2B3F7303FB4AB0083723B /* Script.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Script.js; sourceTree = "<group>"; };
+		C7D2B3F8303FB4AB0083723B /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		C7D2B3F9303FB4AC0083723B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C7D2B3FB303FB4AC0083723B /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		C7D2B400303FB4AC0083723B /* CV Manager Safari.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CV Manager Safari.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7D2B403303FB4AC0083723B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		C7D2B405303FB4AC0083723B /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		C7D2B408303FB4AC0083723B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		C7D2B40B303FB4AC0083723B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		C7D2B40D303FB4AC0083723B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C7D2B412303FB4AC0083723B /* CV Manager Safari.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CV Manager Safari.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7D2B414303FB4AC0083723B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		C7D2B417303FB4AC0083723B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		C7D2B419303FB4AC0083723B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C7D2B41E303FB4AC0083723B /* CV Manager Safari Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "CV Manager Safari Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7D2B423303FB4AC0083723B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C7D2B428303FB4AC0083723B /* CV Manager Safari Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "CV Manager Safari Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7D2B42D303FB4AC0083723B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C7D2B44D303FB4AD0083723B /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = popup.js; path = "../../../../safari-extension/popup.js"; sourceTree = "<group>"; };
+		C7D2B44E303FB4AD0083723B /* content.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; name = content.css; path = "../../../../safari-extension/content.css"; sourceTree = "<group>"; };
+		C7D2B44F303FB4AD0083723B /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = background.js; path = "../../../../safari-extension/background.js"; sourceTree = "<group>"; };
+		C7D2B450303FB4AD0083723B /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = popup.html; path = "../../../../safari-extension/popup.html"; sourceTree = "<group>"; };
+		C7D2B451303FB4AD0083723B /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = "../../../../safari-extension/manifest.json"; sourceTree = "<group>"; };
+		C7D2B452303FB4AD0083723B /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; name = popup.css; path = "../../../../safari-extension/popup.css"; sourceTree = "<group>"; };
+		C7D2B453303FB4AD0083723B /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = content.js; path = "../../../../safari-extension/content.js"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C7D2B3FD303FB4AC0083723B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B40F303FB4AC0083723B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B41B303FB4AC0083723B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B425303FB4AC0083723B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C7D2B3EC303FB4AB0083723B = {
+			isa = PBXGroup;
+			children = (
+				C732F3E7303FB718000C432C /* CV Manager Safari Extension (macOS).entitlements */,
+				C732F3E6303FB689000C432C /* CV Manager Safari (macOS).entitlements */,
+				C7D2B3F1303FB4AB0083723B /* Shared (App) */,
+				C7D2B3FA303FB4AC0083723B /* Shared (Extension) */,
+				C7D2B402303FB4AC0083723B /* iOS (App) */,
+				C7D2B413303FB4AC0083723B /* macOS (App) */,
+				C7D2B422303FB4AC0083723B /* iOS (Extension) */,
+				C7D2B42C303FB4AC0083723B /* macOS (Extension) */,
+				C7D2B401303FB4AC0083723B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C7D2B3F1303FB4AB0083723B /* Shared (App) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B3F8303FB4AB0083723B /* ViewController.swift */,
+				C7D2B3F9303FB4AC0083723B /* Assets.xcassets */,
+				C7D2B3F2303FB4AB0083723B /* Resources */,
+			);
+			path = "Shared (App)";
+			sourceTree = "<group>";
+		};
+		C7D2B3F2303FB4AB0083723B /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B3F3303FB4AB0083723B /* Main.html */,
+				C7D2B3F5303FB4AB0083723B /* Icon.png */,
+				C7D2B3F6303FB4AB0083723B /* Style.css */,
+				C7D2B3F7303FB4AB0083723B /* Script.js */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		C7D2B3FA303FB4AC0083723B /* Shared (Extension) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B44C303FB4AD0083723B /* Resources */,
+				C7D2B3FB303FB4AC0083723B /* SafariWebExtensionHandler.swift */,
+			);
+			path = "Shared (Extension)";
+			sourceTree = "<group>";
+		};
+		C7D2B401303FB4AC0083723B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B400303FB4AC0083723B /* CV Manager Safari.app */,
+				C7D2B412303FB4AC0083723B /* CV Manager Safari.app */,
+				C7D2B41E303FB4AC0083723B /* CV Manager Safari Extension.appex */,
+				C7D2B428303FB4AC0083723B /* CV Manager Safari Extension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C7D2B402303FB4AC0083723B /* iOS (App) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B403303FB4AC0083723B /* AppDelegate.swift */,
+				C7D2B405303FB4AC0083723B /* SceneDelegate.swift */,
+				C7D2B407303FB4AC0083723B /* LaunchScreen.storyboard */,
+				C7D2B40A303FB4AC0083723B /* Main.storyboard */,
+				C7D2B40D303FB4AC0083723B /* Info.plist */,
+			);
+			path = "iOS (App)";
+			sourceTree = "<group>";
+		};
+		C7D2B413303FB4AC0083723B /* macOS (App) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B414303FB4AC0083723B /* AppDelegate.swift */,
+				C7D2B416303FB4AC0083723B /* Main.storyboard */,
+				C7D2B419303FB4AC0083723B /* Info.plist */,
+			);
+			path = "macOS (App)";
+			sourceTree = "<group>";
+		};
+		C7D2B422303FB4AC0083723B /* iOS (Extension) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B423303FB4AC0083723B /* Info.plist */,
+			);
+			path = "iOS (Extension)";
+			sourceTree = "<group>";
+		};
+		C7D2B42C303FB4AC0083723B /* macOS (Extension) */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B42D303FB4AC0083723B /* Info.plist */,
+			);
+			path = "macOS (Extension)";
+			sourceTree = "<group>";
+		};
+		C7D2B44C303FB4AD0083723B /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C7D2B44D303FB4AD0083723B /* popup.js */,
+				C7D2B44E303FB4AD0083723B /* content.css */,
+				C7D2B44F303FB4AD0083723B /* background.js */,
+				C7D2B450303FB4AD0083723B /* popup.html */,
+				C7D2B451303FB4AD0083723B /* manifest.json */,
+				C7D2B452303FB4AD0083723B /* popup.css */,
+				C7D2B453303FB4AD0083723B /* content.js */,
+			);
+			name = Resources;
+			path = "Shared (Extension)";
+			sourceTree = SOURCE_ROOT;
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C7D2B3FF303FB4AC0083723B /* CV Manager Safari (iOS) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7D2B442303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari (iOS)" */;
+			buildPhases = (
+				C7D2B3FC303FB4AC0083723B /* Sources */,
+				C7D2B3FD303FB4AC0083723B /* Frameworks */,
+				C7D2B3FE303FB4AC0083723B /* Resources */,
+				C7D2B441303FB4AC0083723B /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C7D2B421303FB4AC0083723B /* PBXTargetDependency */,
+			);
+			name = "CV Manager Safari (iOS)";
+			packageProductDependencies = (
+			);
+			productName = "CV Manager Safari (iOS)";
+			productReference = C7D2B400303FB4AC0083723B /* CV Manager Safari.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C7D2B411303FB4AC0083723B /* CV Manager Safari (macOS) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7D2B449303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari (macOS)" */;
+			buildPhases = (
+				C7D2B40E303FB4AC0083723B /* Sources */,
+				C7D2B40F303FB4AC0083723B /* Frameworks */,
+				C7D2B410303FB4AC0083723B /* Resources */,
+				C7D2B448303FB4AC0083723B /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C7D2B42B303FB4AC0083723B /* PBXTargetDependency */,
+			);
+			name = "CV Manager Safari (macOS)";
+			packageProductDependencies = (
+			);
+			productName = "CV Manager Safari (macOS)";
+			productReference = C7D2B412303FB4AC0083723B /* CV Manager Safari.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C7D2B41D303FB4AC0083723B /* CV Manager Safari Extension (iOS) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7D2B43E303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari Extension (iOS)" */;
+			buildPhases = (
+				C7D2B41A303FB4AC0083723B /* Sources */,
+				C7D2B41B303FB4AC0083723B /* Frameworks */,
+				C7D2B41C303FB4AC0083723B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "CV Manager Safari Extension (iOS)";
+			packageProductDependencies = (
+			);
+			productName = "CV Manager Safari Extension (iOS)";
+			productReference = C7D2B41E303FB4AC0083723B /* CV Manager Safari Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C7D2B427303FB4AC0083723B /* CV Manager Safari Extension (macOS) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7D2B445303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari Extension (macOS)" */;
+			buildPhases = (
+				C7D2B424303FB4AC0083723B /* Sources */,
+				C7D2B425303FB4AC0083723B /* Frameworks */,
+				C7D2B426303FB4AC0083723B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "CV Manager Safari Extension (macOS)";
+			packageProductDependencies = (
+			);
+			productName = "CV Manager Safari Extension (macOS)";
+			productReference = C7D2B428303FB4AC0083723B /* CV Manager Safari Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C7D2B3ED303FB4AB0083723B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					C7D2B3FF303FB4AC0083723B = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C7D2B411303FB4AC0083723B = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C7D2B41D303FB4AC0083723B = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C7D2B427303FB4AC0083723B = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = C7D2B3F0303FB4AB0083723B /* Build configuration list for PBXProject "CV Manager Safari" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C7D2B3EC303FB4AB0083723B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C7D2B401303FB4AC0083723B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C7D2B3FF303FB4AC0083723B /* CV Manager Safari (iOS) */,
+				C7D2B411303FB4AC0083723B /* CV Manager Safari (macOS) */,
+				C7D2B41D303FB4AC0083723B /* CV Manager Safari Extension (iOS) */,
+				C7D2B427303FB4AC0083723B /* CV Manager Safari Extension (macOS) */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C7D2B3FE303FB4AC0083723B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B430303FB4AC0083723B /* Icon.png in Resources */,
+				C7D2B409303FB4AC0083723B /* LaunchScreen.storyboard in Resources */,
+				C7D2B42E303FB4AC0083723B /* Main.html in Resources */,
+				C7D2B434303FB4AC0083723B /* Script.js in Resources */,
+				C7D2B438303FB4AC0083723B /* Assets.xcassets in Resources */,
+				C7D2B40C303FB4AC0083723B /* Main.storyboard in Resources */,
+				C7D2B432303FB4AC0083723B /* Style.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B410303FB4AC0083723B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B431303FB4AC0083723B /* Icon.png in Resources */,
+				C7D2B433303FB4AC0083723B /* Style.css in Resources */,
+				C7D2B418303FB4AC0083723B /* Main.storyboard in Resources */,
+				C7D2B435303FB4AC0083723B /* Script.js in Resources */,
+				C7D2B439303FB4AC0083723B /* Assets.xcassets in Resources */,
+				C7D2B42F303FB4AC0083723B /* Main.html in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B41C303FB4AC0083723B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B45B303FB4AD0083723B /* popup.js in Resources */,
+				C7D2B45E303FB4AD0083723B /* popup.html in Resources */,
+				C7D2B460303FB4AD0083723B /* popup.css in Resources */,
+				C7D2B45F303FB4AD0083723B /* manifest.json in Resources */,
+				C7D2B45D303FB4AD0083723B /* background.js in Resources */,
+				C7D2B461303FB4AD0083723B /* content.js in Resources */,
+				C7D2B45C303FB4AD0083723B /* content.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B426303FB4AC0083723B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B454303FB4AD0083723B /* popup.js in Resources */,
+				C7D2B457303FB4AD0083723B /* popup.html in Resources */,
+				C7D2B459303FB4AD0083723B /* popup.css in Resources */,
+				C7D2B458303FB4AD0083723B /* manifest.json in Resources */,
+				C7D2B456303FB4AD0083723B /* background.js in Resources */,
+				C7D2B45A303FB4AD0083723B /* content.js in Resources */,
+				C7D2B455303FB4AD0083723B /* content.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C7D2B3FC303FB4AC0083723B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B436303FB4AC0083723B /* ViewController.swift in Sources */,
+				C7D2B404303FB4AC0083723B /* AppDelegate.swift in Sources */,
+				C7D2B406303FB4AC0083723B /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B40E303FB4AC0083723B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B437303FB4AC0083723B /* ViewController.swift in Sources */,
+				C7D2B415303FB4AC0083723B /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B41A303FB4AC0083723B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B43A303FB4AC0083723B /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7D2B424303FB4AC0083723B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7D2B43B303FB4AC0083723B /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C7D2B421303FB4AC0083723B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C7D2B41D303FB4AC0083723B /* CV Manager Safari Extension (iOS) */;
+			targetProxy = C7D2B420303FB4AC0083723B /* PBXContainerItemProxy */;
+		};
+		C7D2B42B303FB4AC0083723B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C7D2B427303FB4AC0083723B /* CV Manager Safari Extension (macOS) */;
+			targetProxy = C7D2B42A303FB4AC0083723B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		C7D2B3F3303FB4AB0083723B /* Main.html */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C7D2B3F4303FB4AB0083723B /* Base */,
+			);
+			name = Main.html;
+			sourceTree = "<group>";
+		};
+		C7D2B407303FB4AC0083723B /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C7D2B408303FB4AC0083723B /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		C7D2B40A303FB4AC0083723B /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C7D2B40B303FB4AC0083723B /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		C7D2B416303FB4AC0083723B /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C7D2B417303FB4AC0083723B /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		C7D2B43C303FB4AC0083723B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C7D2B43D303FB4AC0083723B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		C7D2B43F303FB4AC0083723B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS (Extension)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari.Extension;
+				PRODUCT_NAME = "CV Manager Safari Extension";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C7D2B440303FB4AC0083723B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS (Extension)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari.Extension;
+				PRODUCT_NAME = "CV Manager Safari Extension";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C7D2B443303FB4AC0083723B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS (App)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari;
+				PRODUCT_NAME = "CV Manager Safari";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C7D2B444303FB4AC0083723B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS (App)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari;
+				PRODUCT_NAME = "CV Manager Safari";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C7D2B446303FB4AC0083723B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "CV Manager Safari Extension (macOS).entitlements";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CVTEAMID00;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "macOS (Extension)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari.Extension;
+				PRODUCT_NAME = "CV Manager Safari Extension";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C7D2B447303FB4AC0083723B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "CV Manager Safari Extension (macOS).entitlements";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CVTEAMID00;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "macOS (Extension)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari.Extension;
+				PRODUCT_NAME = "CV Manager Safari Extension";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C7D2B44A303FB4AC0083723B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "CV Manager Safari (macOS).entitlements";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CVTEAMID00;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "macOS (App)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari;
+				PRODUCT_NAME = "CV Manager Safari";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C7D2B44B303FB4AC0083723B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "CV Manager Safari (macOS).entitlements";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CVTEAMID00;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "macOS (App)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "CV Manager Safari";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cvmanager.app.safari;
+				PRODUCT_NAME = "CV Manager Safari";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C7D2B3F0303FB4AB0083723B /* Build configuration list for PBXProject "CV Manager Safari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7D2B43C303FB4AC0083723B /* Debug */,
+				C7D2B43D303FB4AC0083723B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7D2B43E303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari Extension (iOS)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7D2B43F303FB4AC0083723B /* Debug */,
+				C7D2B440303FB4AC0083723B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7D2B442303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari (iOS)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7D2B443303FB4AC0083723B /* Debug */,
+				C7D2B444303FB4AC0083723B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7D2B445303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari Extension (macOS)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7D2B446303FB4AC0083723B /* Debug */,
+				C7D2B447303FB4AC0083723B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7D2B449303FB4AC0083723B /* Build configuration list for PBXNativeTarget "CV Manager Safari (macOS)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7D2B44A303FB4AC0083723B /* Debug */,
+				C7D2B44B303FB4AC0083723B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C7D2B3ED303FB4AB0083723B /* Project object */;
+}

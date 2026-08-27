@@ -71,6 +71,8 @@ CMakeLists.txt.user*
 
 # Python byte code
 *.pyc
+*.py[cod]
+__pycache__/
 
 # Binaries
 # --------
@@ -84,3 +86,9 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
+tmp/
+
+# Xcode user and build state
+xcuserdata/
+*.xcuserstate
+DerivedData/

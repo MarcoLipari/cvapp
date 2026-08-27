@@ -4,16 +4,16 @@ main { padding: 18px; }
 header { margin-bottom: 16px; }
 .eyebrow { color: #1d4ed8; font-size: 10px; font-weight: 800; letter-spacing: 1.1px; }
 h1 { font-size: 20px; margin: 3px 0 4px; }
+h2 { color: #334155; font-size: 13px; margin: 0; }
 p { color: #64748b; font-size: 12px; line-height: 1.4; margin: 0; }
-form, details { display: grid; gap: 10px; }
-label { color: #334155; display: grid; font-size: 12px; font-weight: 650; gap: 4px; }
-input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #172033; font: inherit; padding: 7px; }
-input:focus, textarea:focus { border: 2px solid #60a5fa; outline: 0; }
+section { border-bottom: 1px solid #e2e8f0; display: grid; gap: 9px; margin-bottom: 12px; padding-bottom: 12px; }
+.cv-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
 button { border: 0; border-radius: 6px; background: #1d4ed8; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: 9px 12px; }
 button:hover { background: #1e40af; }
 button.secondary { background: white; border: 1px solid #cbd5e1; color: #334155; }
+.cv-option { text-align: left; }
+button:disabled { cursor: default; opacity: .65; }
+.hint { font-size: 11px; }
 #status { min-height: 17px; }
 #status.error { color: #b91c1c; }
 #status.success { color: #15803d; }
-details { border-top: 1px solid #e2e8f0; margin-top: 16px; padding-top: 12px; }
-summary { color: #475569; cursor: pointer; font-size: 12px; font-weight: 700; }

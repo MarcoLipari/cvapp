@@ -66,17 +66,19 @@ def export_cv(cv: CV, output_dir: str | Path) -> tuple[Path, Path]:
     from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QPainter
 
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", cv.name).strip("-") or "cv"
-    stem = f"{safe_name}-{cv.id}"
-    markdown_path, pdf_path = output / f"{stem}.md", output / f"{stem}.pdf"
-    pending_pdf_path = output / f".{stem}.pending.pdf"
     profile = DEFAULT_PROFILE | cv.profile
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", cv.name).strip("-") or "cv"
+    markdown_stem = f"{safe_name}-{cv.id}"
+    pdf_stem = re.sub(r"[^A-Za-z0-9]+", "", profile["name"]) + "CV"
+    markdown_path = output / f"{markdown_stem}.md"
+    pdf_path = output / f"{pdf_stem}.pdf"
+    pending_pdf_path = output / f".{pdf_stem}.pending.pdf"
     markdown = render_markdown(cv); markdown_path.write_text(markdown, encoding="utf-8")
     writer = QPdfWriter(str(pending_pdf_path))
     # Keep the file broadly compatible and make its purpose unambiguous to
     # document-management systems before they inspect the page contents.
     writer.setPdfVersion(QPdfWriter.PdfVersion.PdfVersion_1_4)
-    pdf_title = re.sub(r"[^A-Za-z0-9]+", "", profile["name"]) + "CV"
+    pdf_title = pdf_stem
     writer.setTitle(pdf_title)
     writer.setResolution(72)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))

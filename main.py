@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QSize, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QDate, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
@@ -17,9 +17,9 @@ from PySide6.QtWidgets import (
 )
 
 from cv_export import export_cv, render_markdown
-from capture_bridge import CaptureBridge
 from cv_importer import ImportResult, import_cv
 from database import Application, CVDatabase, DEFAULT_PROFILE, STATUSES, Section
+from safari_bridge_store import SafariBridgeStore
 
 
 APP_STYLESHEET = """
@@ -343,26 +343,25 @@ class CVDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    capture_received = Signal(dict)
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CV Manager")
         self.resize(1200, 780)
         self.data_dir = app_data_dir()
         self.db = CVDatabase(self.data_dir / "cv_manager.sqlite3")
-        self.capture_bridge = CaptureBridge(self.capture_received.emit)
-        self.capture_received.connect(self.receive_capture)
+        self.safari_bridge = SafariBridgeStore(self.db)
+        self.safari_bridge_error = ""
 
         self.nav = QListWidget(); self.nav.setFixedWidth(205)
-        self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Capture"])
+        self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Integration"])
         self.pages = QStackedWidget()
         for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.tree_page(), self.sections_page(), self.profile_page(), self.capture_page()):
             self.pages.addWidget(page)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         shell = QWidget(); layout = QHBoxLayout(shell); layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(18); layout.addWidget(self.nav); layout.addWidget(self.pages, 1); self.setCentralWidget(shell)
         refresh = QAction("Refresh", self); refresh.setShortcut("Cmd+R"); refresh.triggered.connect(self.refresh_all); self.menuBar().addAction(refresh)
-        self.nav.setCurrentRow(0); self.refresh_all()
+        self.safari_timer = QTimer(self); self.safari_timer.timeout.connect(self.poll_safari_bridge); self.safari_timer.start(1000)
+        self.nav.setCurrentRow(0); self.refresh_all(); self.poll_safari_bridge()
 
     def card(self, caption: str) -> QLabel:
         card = QLabel(caption); card.setProperty("card", True); card.setMinimumHeight(86); card.setAlignment(Qt.AlignmentFlag.AlignCenter); card.setStyleSheet("font-size: 15px; font-weight: 600; padding: 8px;")
@@ -399,7 +398,7 @@ class MainWindow(QMainWindow):
         self.application_table = self.table(["Company", "Role", "Location", "Applied", "Status", "CV used"]); self.application_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.application_table.itemDoubleClicked.connect(lambda _: self.edit_application()); self.application_table.itemSelectionChanged.connect(self.refresh_application_details); layout.addWidget(self.application_table, 1)
         application_card, self.application_detail_labels = self.detail_card([
             ("job", "Selected job"), ("timeline", "Application"), ("cv", "CV snapshot"),
-            ("posting", "Job posting"), ("notes", "Notes"),
+            ("posting", "Job posting"), ("snapshot", "Saved posting snapshot"), ("notes", "Notes"),
         ])
         layout.addWidget(application_card)
         return page
@@ -707,13 +706,13 @@ class MainWindow(QMainWindow):
 
     def capture_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
-        layout.addWidget(title("Safari capture", "Save a job from the companion Safari extension to this Mac."))
+        layout.addWidget(title("Safari integration", "Share exported CVs and receive applications through Safari's native extension bridge."))
         card = QFrame(); card.setProperty("card", True); form = QFormLayout(card); form.setContentsMargins(22, 22, 22, 22)
-        self.capture_status = QLabel(); self.capture_endpoint = QLineEdit(); self.capture_endpoint.setReadOnly(True); self.capture_token = QLineEdit(); self.capture_token.setReadOnly(True)
-        form.addRow("Status", self.capture_status); form.addRow("Local endpoint", self.capture_endpoint); form.addRow("Extension token", self.capture_token)
+        self.capture_status = QLabel(); self.capture_cv_count = QLabel(); self.capture_pending = QLabel(); self.capture_folder = QLineEdit(str(self.safari_bridge.root)); self.capture_folder.setReadOnly(True)
+        form.addRow("Status", self.capture_status); form.addRow("CVs available", self.capture_cv_count); form.addRow("Queued changes", self.capture_pending); form.addRow("Shared local storage", self.capture_folder)
         layout.addWidget(card)
-        actions = QHBoxLayout(); self.capture_toggle = QPushButton(); copy_endpoint = secondary_button("Copy endpoint"); copy_token = secondary_button("Copy token"); self.capture_toggle.clicked.connect(self.toggle_capture_bridge); copy_endpoint.clicked.connect(lambda: self.copy_capture_value(self.capture_endpoint.text())); copy_token.clicked.connect(lambda: self.copy_capture_value(self.capture_token.text())); actions.addWidget(self.capture_toggle); actions.addWidget(copy_endpoint); actions.addWidget(copy_token); actions.addStretch(); layout.addLayout(actions)
-        guide = QLabel("Start the bridge, then copy the endpoint and token into the extension. Captured jobs are saved as Applied for review. The bridge accepts only local requests with this token.")
+        actions = QHBoxLayout(); sync = QPushButton("Sync now"); open_folder = secondary_button("Open shared folder"); sync.clicked.connect(self.sync_safari_bridge); open_folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.safari_bridge.root)))); actions.addWidget(sync); actions.addWidget(open_folder); actions.addStretch(); layout.addLayout(actions)
+        guide = QLabel("No local web server or token is needed. The native Safari extension reads this private App Group storage, lets you attach an exported CV directly, and queues logged applications here when CV Manager is closed.")
         guide.setWordWrap(True); guide.setProperty("muted", True); layout.addWidget(guide); layout.addStretch(); self.refresh_capture_status()
         return page
 
@@ -799,11 +798,12 @@ class MainWindow(QMainWindow):
         profile = self.db.get_profile()
         for key, label in self.profile_labels.items(): label.setText(profile[key] or "—")
         self.refresh_cv_details(); self.refresh_section_details()
+        self.sync_safari_bridge()
         self.refresh_capture_status()
 
     def refresh_applications(self) -> None:
         needle = self.application_search.text().strip().casefold() if hasattr(self, "application_search") else ""
-        matches = [record for record in self._applications if needle in " ".join([record.company, record.role, record.location, record.status, record.notes, record.posting_url]).casefold()]
+        matches = [record for record in self._applications if needle in " ".join([record.company, record.role, record.location, record.status, record.notes, record.posting_url, record.posting_snapshot_json]).casefold()]
         cv_names = {cv.id: cv.name for cv in self._cvs}
         self.fill_table(self.application_table, matches, lambda a: [a.company, a.role, a.location or "—", a.application_date, a.status, cv_names.get(a.cv_id, "—")])
         self.refresh_application_details()
@@ -814,14 +814,20 @@ class MainWindow(QMainWindow):
         application_id = self.selected_id(self.application_table)
         application = self.db.get_application(application_id) if application_id else None
         if not application:
-            values = {"job": "Select an application to see all of its details.", "timeline": "—", "cv": "—", "posting": "—", "notes": "—"}
+            values = {"job": "Select an application to see all of its details.", "timeline": "—", "cv": "—", "posting": "—", "snapshot": "—", "notes": "—"}
         else:
             cv = self.db.get_cv(application.cv_id) if application.cv_id else None
+            try:
+                description = json.loads(application.posting_snapshot_json or "{}").get("description", "")
+            except json.JSONDecodeError:
+                description = ""
+            snapshot = description[:800] + ("…" if len(description) > 800 else "")
             values = {
                 "job": f"{application.role} at {application.company}" + (f" · {application.location}" if application.location else ""),
                 "timeline": f"Applied {application.application_date} · {application.status}",
                 "cv": cv.name if cv else "No CV linked",
                 "posting": application.posting_url or "No URL saved",
+                "snapshot": snapshot or "No posting snapshot saved",
                 "notes": application.notes or "No notes saved",
             }
         for key, value in values.items(): self.application_detail_labels[key].setText(value)
@@ -939,14 +945,6 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(4)
         self.statusBar().showMessage(f"Imported {len(dialog.selected_sections())} CV section(s).", 6000)
 
-    def edit_section(self) -> None:
-        section_id = self.selected_section_id()
-        if not section_id: QMessageBox.information(self, "Select a section", "Select a section to edit."); return
-        dialog = SectionDialog(self.db.get_section(section_id), self)
-        if not dialog.exec():
-            return
-        self.update_library_section(section_id, *dialog.values())
-
     def save_library_section(self) -> None:
         item = self.library_section_item(self.section_tree.currentItem())
         if not item:
@@ -1027,31 +1025,46 @@ class MainWindow(QMainWindow):
     def refresh_capture_status(self) -> None:
         if not hasattr(self, "capture_status"):
             return
-        if self.capture_bridge.is_running:
-            self.capture_status.setText("<b style='color:#15803d'>Listening on this Mac</b>")
-            self.capture_endpoint.setText(self.capture_bridge.endpoint or "")
-            self.capture_token.setText(self.capture_bridge.token)
-            self.capture_toggle.setText("Stop capture bridge")
+        if self.safari_bridge_error:
+            self.capture_status.setText(f"<b style='color:#b91c1c'>Needs attention: {self.safari_bridge_error}</b>")
         else:
-            self.capture_status.setText("<b style='color:#64748b'>Not running</b>")
-            self.capture_endpoint.clear(); self.capture_token.clear(); self.capture_toggle.setText("Start capture bridge")
+            self.capture_status.setText("<b style='color:#15803d'>Local bridge ready</b>")
+        try:
+            catalog = json.loads(self.safari_bridge.catalog_path.read_text(encoding="utf-8"))
+            cv_count = len(catalog.get("cvs", []))
+        except (OSError, json.JSONDecodeError):
+            cv_count = 0
+        self.capture_cv_count.setText(str(cv_count))
+        failed = self.safari_bridge.failed_count
+        pending = self.safari_bridge.pending_count
+        self.capture_pending.setText(f"{pending}" + (f" · {failed} failed" if failed else ""))
 
-    def toggle_capture_bridge(self) -> None:
-        if self.capture_bridge.is_running:
-            self.capture_bridge.stop()
-        else:
-            self.capture_bridge.start()
+    def sync_safari_bridge(self) -> None:
+        try:
+            self.safari_bridge.sync_cvs()
+            self.safari_bridge_error = ""
+        except OSError as error:
+            self.safari_bridge_error = str(error)
         self.refresh_capture_status()
 
-    @staticmethod
-    def copy_capture_value(value: str) -> None:
-        if value:
-            QApplication.clipboard().setText(value)
-
-    def receive_capture(self, values: dict) -> None:
-        self.db.create_application(**values)
-        self.refresh_all()
-        self.statusBar().showMessage(f"Captured application: {values['role']} at {values['company']}", 6000)
+    def poll_safari_bridge(self) -> None:
+        try:
+            results = self.safari_bridge.process_requests()
+            self.safari_bridge_error = ""
+        except OSError as error:
+            self.safari_bridge_error = str(error)
+            self.refresh_capture_status()
+            return
+        changed = [result for result in results if result["action"] in {"created", "updated", "cancelled"}]
+        if changed:
+            latest = changed[-1]
+            if latest["action"] == "cancelled":
+                self.statusBar().showMessage("Removed Safari application log", 6000)
+            else:
+                self.statusBar().showMessage(f"Safari logged: {latest['role']} at {latest['company']}", 6000)
+            self.refresh_all()
+        else:
+            self.refresh_capture_status()
 
     def export_applications_csv(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(self, "Export applications", "applications.csv", "CSV files (*.csv)")
@@ -1142,11 +1155,6 @@ class MainWindow(QMainWindow):
 
     def open_export_folder(self) -> None:
         export_dir = self.data_dir / "exports"; export_dir.mkdir(exist_ok=True); QDesktopServices.openUrl(QUrl.fromLocalFile(str(export_dir)))
-
-    def closeEvent(self, event) -> None:
-        self.capture_bridge.stop()
-        super().closeEvent(event)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); app.setOrganizationName("CV Manager"); app.setApplicationName("CV Manager"); app.setStyleSheet(APP_STYLESHEET)

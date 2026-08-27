@@ -53,6 +53,7 @@ class CVExportTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             _, pdf_path = export_cv(cv, directory)
+            self.assertEqual(pdf_path.name, "AdaLovelaceCV.pdf")
             document = QPdfDocument()
             self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
             text = document.getAllText(0).text()

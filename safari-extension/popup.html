@@ -3,33 +3,24 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CV Manager Capture</title>
+    <title>CV Manager Safari Helper</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
       <header>
         <span class="eyebrow">CV MANAGER</span>
-        <h1>Capture application</h1>
-        <p>Save this job to CV Manager on this Mac.</p>
+        <h1>Safari helper</h1>
+        <p>Attach a saved CV or log the current application.</p>
       </header>
 
-      <form id="capture-form">
-        <label>Company <input id="company" name="company" required autofocus></label>
-        <label>Role <input id="role" name="role" required></label>
-        <label>Location <input id="location" name="location" placeholder="Montreal, QC"></label>
-        <label>Job posting URL <input id="posting-url" name="posting-url" type="url"></label>
-        <label>Notes <textarea id="notes" name="notes" rows="3" placeholder="Optional notes or next steps"></textarea></label>
-        <button type="submit">Save application</button>
-        <p id="status" role="status"></p>
-      </form>
-
-      <details>
-        <summary>CV Manager connection</summary>
-        <label>Local endpoint <input id="endpoint" type="url" placeholder="http://127.0.0.1:12345/v1/applications"></label>
-        <label>Extension token <input id="token" type="password" placeholder="Copy from Safari Capture"></label>
-        <button id="save-settings" type="button" class="secondary">Save settings</button>
-      </details>
+      <section>
+        <h2>Attach a CV</h2>
+        <div id="cv-list" class="cv-list"><p>Loading your CVs…</p></div>
+        <p class="hint">You can also use “Choose from CV Manager” beside a résumé upload field.</p>
+      </section>
+      <button id="log-page" type="button" class="secondary">Log this page as applied</button>
+      <p id="status" role="status"></p>
     </main>
     <script src="popup.js"></script>
   </body>

@@ -12,50 +12,64 @@ async function activeTab() {
   return tabs[0];
 }
 
-async function loadSettings() {
-  const settings = await browserApi.storage.local.get(["endpoint", "token"]);
-  $("#endpoint").value = settings.endpoint || "";
-  $("#token").value = settings.token || "";
+async function send(message) {
+  if (globalThis.browser) return browserApi.runtime.sendMessage(message);
+  return new Promise((resolve, reject) => {
+    browserApi.runtime.sendMessage(message, (response) => {
+      const error = browserApi.runtime.lastError;
+      if (error) reject(new Error(error.message)); else resolve(response);
+    });
+  });
 }
 
-$("#save-settings").addEventListener("click", async () => {
-  await browserApi.storage.local.set({ endpoint: $("#endpoint").value.trim(), token: $("#token").value.trim() });
-  setStatus("CV Manager connection saved.", "success");
-});
-
-$("#capture-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const endpoint = $("#endpoint").value.trim();
-  const token = $("#token").value.trim();
-  if (!endpoint || !token) {
-    setStatus("Copy the endpoint and token from Safari Capture first.", "error");
-    return;
-  }
-  const button = event.submitter;
-  button.disabled = true;
-  setStatus("Saving…");
-  const payload = {
-    company: $("#company").value.trim(),
-    role: $("#role").value.trim(),
-    location: $("#location").value.trim(),
-    posting_url: $("#posting-url").value.trim(),
-    notes: $("#notes").value.trim()
-  };
+async function loadCvs() {
+  const list = $("#cv-list");
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CV-Manager-Token": token },
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) throw new Error((await response.json()).error || `Request failed (${response.status})`);
-    setStatus("Saved to CV Manager.", "success");
-    await browserApi.storage.local.set({ endpoint, token });
+    const response = await send({ type: "listCvs" });
+    if (!response?.ok) throw new Error(response?.error || "Native helper unavailable.");
+    list.textContent = "";
+    if (!response.cvs?.length) {
+      const empty = document.createElement("p"); empty.textContent = "No exported CVs are available yet."; list.appendChild(empty);
+      return;
+    }
+    for (const cv of response.cvs) {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "cv-option"; button.textContent = cv.name;
+      button.addEventListener("click", async () => {
+        button.disabled = true; setStatus("Attaching…");
+        try {
+          const tab = await activeTab();
+          const result = await send({ type: "attachCv", tabId: tab.id, cvId: cv.id });
+          if (!result?.ok) throw new Error(result?.error || "Could not attach that CV.");
+          setStatus(`${cv.name} attached.`, "success");
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+      list.appendChild(button);
+    }
+    setStatus("Native bridge connected.", "success");
   } catch (error) {
-    setStatus(error.message === "Failed to fetch" ? "CV Manager is not listening. Start Safari Capture in the app." : error.message, "error");
+    list.textContent = "";
+    const help = document.createElement("p"); help.textContent = "Open the CV Manager Safari host once, then enable its extension in Safari Settings."; list.appendChild(help);
+    setStatus(error.message, "error");
+  }
+}
+
+$("#log-page").addEventListener("click", async () => {
+  const button = $("#log-page"); button.disabled = true; setStatus("Logging…");
+  try {
+    const tab = await activeTab();
+    const response = await browserApi.tabs.sendMessage(tab.id, { type: "manualLog" });
+    if (!response?.ok) throw new Error(response?.error || "Could not log this page.");
+    setStatus("Application logged.", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
   } finally {
     button.disabled = false;
   }
 });
 
-activeTab().then((tab) => { $("#posting-url").value = tab?.url || ""; });
-loadSettings();
+loadCvs();

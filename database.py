@@ -53,6 +53,8 @@ class Application:
     cv_id: int | None
     notes: str
     posting_url: str
+    capture_event_id: str = ""
+    posting_snapshot_json: str = ""
 
 
 class CVDatabase:
@@ -96,7 +98,9 @@ class CVDatabase:
                     status TEXT NOT NULL,
                     cv_id INTEGER REFERENCES cvs(id),
                     notes TEXT NOT NULL DEFAULT '',
-                    posting_url TEXT NOT NULL DEFAULT ''
+                    posting_url TEXT NOT NULL DEFAULT '',
+                    capture_event_id TEXT NOT NULL DEFAULT '',
+                    posting_snapshot_json TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -109,6 +113,14 @@ class CVDatabase:
             application_columns = {row["name"] for row in db.execute("PRAGMA table_info(applications)")}
             if "posting_url" not in application_columns:
                 db.execute("ALTER TABLE applications ADD COLUMN posting_url TEXT NOT NULL DEFAULT ''")
+            if "capture_event_id" not in application_columns:
+                db.execute("ALTER TABLE applications ADD COLUMN capture_event_id TEXT NOT NULL DEFAULT ''")
+            if "posting_snapshot_json" not in application_columns:
+                db.execute("ALTER TABLE applications ADD COLUMN posting_snapshot_json TEXT NOT NULL DEFAULT ''")
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS applications_capture_event_id_idx "
+                "ON applications(capture_event_id) WHERE capture_event_id <> ''"
+            )
             section_columns = {row["name"] for row in db.execute("PRAGMA table_info(sections)")}
             if "labels" not in section_columns:
                 db.execute("ALTER TABLE sections ADD COLUMN labels TEXT NOT NULL DEFAULT ''")
@@ -124,7 +136,11 @@ class CVDatabase:
 
     @staticmethod
     def _application(row: sqlite3.Row) -> Application:
-        return Application(row["id"], row["company"], row["role"], row["location"], row["application_date"], row["status"], row["cv_id"], row["notes"], row["posting_url"])
+        return Application(
+            row["id"], row["company"], row["role"], row["location"], row["application_date"],
+            row["status"], row["cv_id"], row["notes"], row["posting_url"],
+            row["capture_event_id"], row["posting_snapshot_json"],
+        )
 
     def get_profile(self) -> dict[str, str]:
         with self._connect() as db:
@@ -194,9 +210,6 @@ class CVDatabase:
                     affected_cv_ids.append(row["id"])
         return affected_cv_ids
 
-    def delete_section(self, section_id: int) -> None:
-        self.delete_sections([section_id])
-
     def delete_sections(self, section_ids: list[int]) -> None:
         section_ids = list(dict.fromkeys(section_ids))
         if not section_ids:
@@ -255,9 +268,6 @@ class CVDatabase:
         with self._connect() as db:
             db.execute("UPDATE cvs SET markdown_path=?, pdf_path=? WHERE id=?", (str(markdown_path), str(pdf_path), cv_id))
 
-    def delete_cv(self, cv_id: int) -> None:
-        self.delete_cvs([cv_id])
-
     def delete_cvs(self, cv_ids: list[int]) -> None:
         cv_ids = list(dict.fromkeys(cv_ids))
         if not cv_ids:
@@ -276,9 +286,17 @@ class CVDatabase:
             row = db.execute("SELECT * FROM applications WHERE id=?", (application_id,)).fetchone()
         return self._application(row) if row else None
 
+    def get_application_by_capture_event(self, event_id: str) -> Application | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM applications WHERE capture_event_id=?", (event_id,)).fetchone()
+        return self._application(row) if row else None
+
     def create_application(self, **values) -> int:
         self._validate_application(values)
-        columns = ("company", "role", "location", "application_date", "status", "cv_id", "notes", "posting_url")
+        columns = (
+            "company", "role", "location", "application_date", "status", "cv_id", "notes",
+            "posting_url", "capture_event_id", "posting_snapshot_json",
+        )
         with self._connect() as db:
             return db.execute(
                 f"INSERT INTO applications({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
@@ -287,7 +305,8 @@ class CVDatabase:
 
     def update_application(self, application_id: int, **values) -> None:
         self._validate_application(values)
-        columns = ("company", "role", "location", "application_date", "status", "cv_id", "notes", "posting_url")
+        columns = ["company", "role", "location", "application_date", "status", "cv_id", "notes", "posting_url"]
+        columns.extend(column for column in ("capture_event_id", "posting_snapshot_json") if column in values)
         with self._connect() as db:
             db.execute(
                 f"UPDATE applications SET {','.join(f'{column}=?' for column in columns)} WHERE id=?",

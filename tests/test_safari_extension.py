@@ -11,13 +11,22 @@ class SafariExtensionAssetsTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["manifest_version"], 3)
         self.assertEqual(manifest["action"]["default_popup"], "popup.html")
-        self.assertTrue({"activeTab", "storage", "tabs"}.issubset(manifest["permissions"]))
+        self.assertTrue({"activeTab", "storage", "tabs", "nativeMessaging"}.issubset(manifest["permissions"]))
+        self.assertEqual(manifest["background"]["service_worker"], "background.js")
+        self.assertIn("content.js", manifest["content_scripts"][0]["js"])
 
-    def test_popup_uses_authenticated_desktop_bridge(self):
-        script = (ROOT / "popup.js").read_text()
-        self.assertIn("X-CV-Manager-Token", script)
-        self.assertIn("posting_url", script)
-        self.assertIn("fetch(endpoint", script)
+    def test_extension_uses_native_bridge_and_direct_cv_attachment(self):
+        background = (ROOT / "background.js").read_text()
+        content = (ROOT / "content.js").read_text()
+        popup = (ROOT / "popup.js").read_text()
+        self.assertIn("sendNativeMessage", background)
+        self.assertIn('operation: "write_event"', background)
+        self.assertIn("new DataTransfer", content)
+        self.assertIn("cv.upload_filename || cv.name", content)
+        self.assertIn("Choose from CV Manager", content)
+        self.assertIn("Don’t log", content)
+        self.assertIn('type: "attachCv"', popup)
+        self.assertNotIn("X-CV-Manager-Token", popup)
 
 
 if __name__ == "__main__":
