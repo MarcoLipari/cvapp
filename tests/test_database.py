@@ -24,6 +24,50 @@ class DatabaseTests(unittest.TestCase):
         self.assertIsNone(saved.pdf_path)
         self.assertTrue(render_markdown(saved).startswith("# \n"))
 
+    def test_section_and_linked_cv_changes_create_independent_history(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python", "backend")
+        cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+
+        self.db.update_section(section_id, "Skills", "Skills", "Python", "data")
+        self.db.update_section(section_id, "Technical Skills", "Skills", "Python and SQL", "data")
+
+        section_history = self.db.list_section_history(section_id)
+        cv_history = self.db.list_cv_history(cv.id)
+        self.assertEqual([entry.version for entry in section_history], [3, 2, 1])
+        self.assertEqual(section_history[0].snapshot["content"], "Python and SQL")
+        self.assertEqual(section_history[1].snapshot["labels"], "data")
+        self.assertEqual(section_history[2].change_type, "created")
+        self.assertEqual([entry.version for entry in cv_history], [2, 1])
+        self.assertEqual(cv_history[0].change_type, "linked_section_updated")
+        self.assertEqual(cv_history[0].snapshot["sections"][0]["title"], "Technical Skills")
+        self.assertEqual(cv_history[1].snapshot["sections"][0]["content"], "Python")
+
+    def test_direct_cv_history_records_only_meaningful_content_changes(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv("Original", [self.db.get_section(section_id)])
+
+        updated = self.db.update_cv(cv.id, "Updated", cv.sections, cv.profile)
+        self.db.update_cv(updated.id, updated.name, updated.sections, updated.profile)
+        self.db.update_cv_exports(updated.id, "current.md", "current.pdf")
+
+        history = self.db.list_cv_history(cv.id)
+        self.assertEqual([entry.version for entry in history], [2, 1])
+        self.assertEqual(history[0].change_type, "edited")
+        self.assertEqual(history[0].snapshot["name"], "Updated")
+        self.assertNotIn("pdf_path", history[0].snapshot)
+        self.assertEqual(history[1].snapshot["name"], "Original")
+
+    def test_deleting_an_item_removes_only_its_history(self):
+        first_section_id = self.db.create_section("First", "Skills", "Python")
+        second_section_id = self.db.create_section("Second", "Skills", "SQL")
+        cv = self.db.create_cv("Role", [self.db.get_section(first_section_id)])
+
+        self.db.delete_sections([first_section_id])
+
+        self.assertEqual(self.db.list_section_history(first_section_id), [])
+        self.assertEqual(len(self.db.list_section_history(second_section_id)), 1)
+        self.assertEqual(len(self.db.list_cv_history(cv.id)), 1)
+
     def test_new_profile_is_blank_until_onboarding_is_completed(self):
         self.assertEqual(
             self.db.get_profile(),
@@ -141,6 +185,8 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(migrated.get_application(1).posting_url, "")
         self.assertEqual(migrated.get_application(1).capture_event_id, "")
         self.assertEqual(migrated.get_application(1).posting_snapshot_json, "")
+        self.assertEqual(migrated.list_cv_history(1)[0].change_type, "baseline")
+        self.assertEqual(migrated.list_cv_history(1)[0].snapshot["name"], "Old CV")
 
     def test_existing_sections_gain_empty_labels(self):
         legacy_path = Path(self.temp.name) / "legacy-sections.sqlite3"
@@ -170,5 +216,8 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(len(backup["sections"]), 1)
         self.assertEqual(len(backup["cvs"]), 1)
         self.assertEqual(len(backup["applications"]), 1)
+        self.assertEqual(backup["version"], 2)
+        self.assertEqual(len(backup["section_history"]), 1)
+        self.assertEqual(len(backup["cv_history"]), 1)
 
 if __name__ == "__main__": unittest.main()

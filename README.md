@@ -18,7 +18,7 @@ Your database and exports are stored in the macOS Application Support directory 
 
 Diagnostic logs are stored in the app's `logs` folder under Application Support. Logs rotate automatically and retain up to five previous 1 MB files.
 
-Use **Export full backup** in Personal Details to create a portable JSON copy of your profile, reusable sections, CV snapshots, and applications. Use **Export CSV** on Applications when you want to analyze or share the application tracker.
+Use **Export full backup** in Personal Details to create a portable JSON copy of your profile, reusable sections, CV snapshots, their histories, and applications. Use **Export CSV** on Applications when you want to analyze or share the application tracker.
 
 ## CV workflow
 
@@ -32,6 +32,8 @@ Saved CVs can be edited from **Tailored CVs**. Editing starts with the saved sec
 Use **Tree View** when you want to customize the whole saved snapshot in one place. The CV is the root; personal details and sections sit beneath it; and each section owns its entry lines and bullet points. Double-click values to edit them, add or remove section content, reorder sibling sections or lines, then choose **Save & export**. Reordering a linked section preserves its library link, while changing that section's title, category, or content makes it CV-specific.
 
 Editing a section in **Section Library** updates every CV that still uses that library section and regenerates their Markdown and PDF exports. If updated content no longer fits legibly on one page, the CV remains updated and the app reports which export needs attention.
+
+Right-click a saved CV and choose **See history** to open any previous version as a PDF. Historical PDFs are generated on demand in a separate history export folder, so they never replace the current CV's PDF. In **Section Library**, right-click a section or any of its content rows and choose **See history** to inspect an earlier version in a compact read-only preview. Exporting or regenerating a PDF does not create a content version, and viewing history never changes current content.
 
 Select any application, CV, or library section to see its complete details below the table, including notes and posting URLs, linked applications, saved contact information, export paths, and full section content.
 

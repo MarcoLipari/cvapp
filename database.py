@@ -59,6 +59,26 @@ class Application:
     posting_snapshot_json: str = ""
 
 
+@dataclass(frozen=True)
+class SectionHistory:
+    id: int
+    section_id: int
+    version: int
+    recorded_at: str
+    change_type: str
+    snapshot: dict
+
+
+@dataclass(frozen=True)
+class CVHistory:
+    id: int
+    cv_id: int
+    version: int
+    recorded_at: str
+    change_type: str
+    snapshot: dict
+
+
 class CVDatabase:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -113,6 +133,28 @@ class CVDatabase:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS section_history (
+                    id INTEGER PRIMARY KEY,
+                    section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    change_type TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    UNIQUE(section_id, version)
+                );
+                CREATE TABLE IF NOT EXISTS cv_history (
+                    id INTEGER PRIMARY KEY,
+                    cv_id INTEGER NOT NULL REFERENCES cvs(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    change_type TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    UNIQUE(cv_id, version)
+                );
+                CREATE INDEX IF NOT EXISTS section_history_recorded_at_idx
+                    ON section_history(recorded_at DESC);
+                CREATE INDEX IF NOT EXISTS cv_history_recorded_at_idx
+                    ON cv_history(recorded_at DESC);
             """)
             columns = {row["name"] for row in db.execute("PRAGMA table_info(cvs)")}
             if "profile_json" not in columns:
@@ -131,6 +173,7 @@ class CVDatabase:
             section_columns = {row["name"] for row in db.execute("PRAGMA table_info(sections)")}
             if "labels" not in section_columns:
                 db.execute("ALTER TABLE sections ADD COLUMN labels TEXT NOT NULL DEFAULT ''")
+            self._backfill_history(db)
 
     @staticmethod
     def _section(row: sqlite3.Row) -> Section:
@@ -148,6 +191,79 @@ class CVDatabase:
             row["status"], row["cv_id"], row["notes"], row["posting_url"],
             row["capture_event_id"], row["posting_snapshot_json"],
         )
+
+    @staticmethod
+    def _section_history(row: sqlite3.Row) -> SectionHistory:
+        return SectionHistory(
+            row["id"], row["section_id"], row["version"], row["recorded_at"],
+            row["change_type"], json.loads(row["snapshot_json"]),
+        )
+
+    @staticmethod
+    def _cv_history(row: sqlite3.Row) -> CVHistory:
+        return CVHistory(
+            row["id"], row["cv_id"], row["version"], row["recorded_at"],
+            row["change_type"], json.loads(row["snapshot_json"]),
+        )
+
+    @staticmethod
+    def _history_timestamp() -> str:
+        return datetime.now().isoformat(timespec="seconds")
+
+    @classmethod
+    def _record_section_history(cls, db: sqlite3.Connection, section_id: int, change_type: str) -> None:
+        row = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
+        if not row:
+            return
+        snapshot = asdict(cls._section(row))
+        version = db.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM section_history WHERE section_id=?",
+            (section_id,),
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO section_history(section_id, version, recorded_at, change_type, snapshot_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (section_id, version, cls._history_timestamp(), change_type, json.dumps(snapshot)),
+        )
+
+    @classmethod
+    def _record_cv_history(cls, db: sqlite3.Connection, cv_id: int, change_type: str) -> None:
+        row = db.execute("SELECT * FROM cvs WHERE id=?", (cv_id,)).fetchone()
+        if not row:
+            return
+        cv = cls._cv(row)
+        snapshot = {
+            "id": cv.id,
+            "name": cv.name,
+            "created_at": cv.created_at,
+            "sections": cv.sections,
+            "profile": cv.profile,
+        }
+        version = db.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM cv_history WHERE cv_id=?",
+            (cv_id,),
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO cv_history(cv_id, version, recorded_at, change_type, snapshot_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (cv_id, version, cls._history_timestamp(), change_type, json.dumps(snapshot)),
+        )
+
+    @classmethod
+    def _backfill_history(cls, db: sqlite3.Connection) -> None:
+        """Give records created before history support a single current-state baseline."""
+        section_ids = db.execute(
+            "SELECT id FROM sections WHERE NOT EXISTS "
+            "(SELECT 1 FROM section_history WHERE section_history.section_id=sections.id)"
+        ).fetchall()
+        for row in section_ids:
+            cls._record_section_history(db, row["id"], "baseline")
+        cv_ids = db.execute(
+            "SELECT id FROM cvs WHERE NOT EXISTS "
+            "(SELECT 1 FROM cv_history WHERE cv_history.cv_id=cvs.id)"
+        ).fetchall()
+        for row in cv_ids:
+            cls._record_cv_history(db, row["id"], "baseline")
 
     def get_profile(self) -> dict[str, str]:
         with self._connect() as db:
@@ -180,21 +296,27 @@ class CVDatabase:
     def create_section(self, title: str, category: str, content: str, labels: str = "") -> int:
         with self._connect() as db:
             order = db.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM sections").fetchone()[0]
-            return db.execute(
+            section_id = db.execute(
                 "INSERT INTO sections(title, category, content, sort_order, labels) VALUES (?, ?, ?, ?, ?)",
                 (title, category, content, order, labels),
             ).lastrowid
+            self._record_section_history(db, section_id, "created")
+            return section_id
 
     def update_section(self, section_id: int, title: str, category: str, content: str, labels: str = "") -> list[int]:
         affected_cv_ids = []
         with self._connect() as db:
-            previous = db.execute("SELECT title, category, content FROM sections WHERE id=?", (section_id,)).fetchone()
+            previous = db.execute("SELECT title, category, content, labels FROM sections WHERE id=?", (section_id,)).fetchone()
             if not previous:
                 raise ValueError("Section not found")
             db.execute(
                 "UPDATE sections SET title=?, category=?, content=?, labels=? WHERE id=?",
                 (title, category, content, labels, section_id),
             )
+            if any(value != previous[key] for key, value in (
+                ("title", title), ("category", category), ("content", content), ("labels", labels),
+            )):
+                self._record_section_history(db, section_id, "edited")
             if all(value == previous[key] for key, value in (("title", title), ("category", category), ("content", content))):
                 return affected_cv_ids
             rows = db.execute("SELECT id, sections_json FROM cvs").fetchall()
@@ -219,6 +341,7 @@ class CVDatabase:
                         "UPDATE cvs SET sections_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
                         (json.dumps(sections), row["id"]),
                     )
+                    self._record_cv_history(db, row["id"], "linked_section_updated")
                     affected_cv_ids.append(row["id"])
         return affected_cv_ids
 
@@ -239,6 +362,26 @@ class CVDatabase:
             row = db.execute("SELECT * FROM cvs WHERE id=?", (cv_id,)).fetchone()
         return self._cv(row) if row else None
 
+    def list_section_history(self, section_id: int | None = None) -> list[SectionHistory]:
+        query = "SELECT * FROM section_history"
+        parameters: tuple = ()
+        if section_id is not None:
+            query += " WHERE section_id=?"
+            parameters = (section_id,)
+        query += " ORDER BY recorded_at DESC, id DESC"
+        with self._connect() as db:
+            return [self._section_history(row) for row in db.execute(query, parameters)]
+
+    def list_cv_history(self, cv_id: int | None = None) -> list[CVHistory]:
+        query = "SELECT * FROM cv_history"
+        parameters: tuple = ()
+        if cv_id is not None:
+            query += " WHERE cv_id=?"
+            parameters = (cv_id,)
+        query += " ORDER BY recorded_at DESC, id DESC"
+        with self._connect() as db:
+            return [self._cv_history(row) for row in db.execute(query, parameters)]
+
     @staticmethod
     def _section_snapshot(section: Section | dict) -> dict:
         """Return the portable fields stored in a CV snapshot."""
@@ -257,6 +400,7 @@ class CVDatabase:
                 "INSERT INTO cvs(name, created_at, sections_json, profile_json) VALUES (?, ?, ?, ?)",
                 (name, datetime.now().isoformat(timespec="seconds"), json.dumps(snapshot), json.dumps(profile_snapshot)),
             ).lastrowid
+            self._record_cv_history(db, cv_id, "created")
         return self.get_cv(cv_id)
 
     def update_cv(self, cv_id: int, name: str, sections: list[Section | dict], profile: dict[str, str] | None = None) -> CV:
@@ -265,15 +409,22 @@ class CVDatabase:
             raise ValueError("A CV needs a name and at least one section")
         snapshot = [self._section_snapshot(section) for section in sections]
         with self._connect() as db:
-            current = db.execute("SELECT profile_json FROM cvs WHERE id=?", (cv_id,)).fetchone()
+            current = db.execute("SELECT name, sections_json, profile_json FROM cvs WHERE id=?", (cv_id,)).fetchone()
             if not current:
                 raise ValueError("CV not found")
             saved_profile = json.loads(current["profile_json"] or "{}")
             profile_snapshot = DEFAULT_PROFILE | (profile if profile is not None else saved_profile)
+            changed = (
+                name.strip() != current["name"]
+                or snapshot != json.loads(current["sections_json"])
+                or profile_snapshot != (DEFAULT_PROFILE | saved_profile)
+            )
             db.execute(
                 "UPDATE cvs SET name=?, sections_json=?, profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
                 (name.strip(), json.dumps(snapshot), json.dumps(profile_snapshot), cv_id),
             )
+            if changed:
+                self._record_cv_history(db, cv_id, "edited")
         return self.get_cv(cv_id)
 
     def update_cv_exports(self, cv_id: int, markdown_path: str | Path, pdf_path: str | Path) -> None:
@@ -345,12 +496,14 @@ class CVDatabase:
         """Return a portable, read-only JSON representation of all user data."""
         return {
             "format": "cv-manager-backup",
-            "version": 1,
+            "version": 2,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "profile": self.get_profile(),
             "sections": [asdict(section) for section in self.list_sections()],
             "cvs": [asdict(cv) for cv in self.list_cvs()],
             "applications": [asdict(application) for application in self.list_applications()],
+            "section_history": [asdict(entry) for entry in self.list_section_history()],
+            "cv_history": [asdict(entry) for entry in self.list_cv_history()],
         }
 
     @staticmethod

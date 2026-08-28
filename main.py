@@ -14,7 +14,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
+    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
     QFileDialog, QPlainTextEdit, QStackedWidget, QTableWidget, QTableWidgetItem,
     QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from cv_export import export_cv, render_markdown
 from cv_importer import ImportResult, import_cv
-from database import Application, CVDatabase, DEFAULT_PROFILE, STATUSES, Section
+from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
 from safari_bridge_store import SafariBridgeStore
 
 
@@ -547,7 +547,7 @@ class MainWindow(QMainWindow):
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library sections update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
-        self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); layout.addWidget(self.cv_table, 1)
+        self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
             ("identity", "Snapshot"), ("contact", "Contact details"), ("sections", "Section order"),
             ("applications", "Linked applications"), ("exports", "Export files"),
@@ -817,6 +817,8 @@ class MainWindow(QMainWindow):
         self.section_tree.setWordWrap(True)
         self.section_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.section_tree.setItemDelegate(LibraryTreeEditDelegate(self.section_tree))
+        self.section_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.section_tree.customContextMenuRequested.connect(self.show_section_context_menu)
         self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
         self.section_tree.itemChanged.connect(self.refresh_section_preview)
         self.section_tree.header().setStretchLastSection(False); self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
@@ -954,6 +956,106 @@ class MainWindow(QMainWindow):
         self.refresh_cv_details(); self.refresh_section_details()
         self.sync_safari_bridge()
         self.refresh_capture_status()
+
+    @staticmethod
+    def history_change_label(change_type: str) -> str:
+        return {
+            "baseline": "History enabled",
+            "created": "Created",
+            "edited": "Edited",
+            "linked_section_updated": "Linked section updated",
+        }.get(change_type, change_type.replace("_", " ").title())
+
+    @staticmethod
+    def previous_versions(history: list) -> list:
+        """History is newest first; its first entry represents the current content."""
+        return history[1:]
+
+    def history_version_label(self, entry) -> str:
+        saved = entry.recorded_at.replace("T", " ")
+        return f"Version {entry.version} · {saved} · {self.history_change_label(entry.change_type)}"
+
+    def show_cv_context_menu(self, position) -> None:
+        item = self.cv_table.itemAt(position)
+        if not item:
+            return
+        self.cv_table.setCurrentCell(item.row(), 0)
+        cv_id = self.selected_id(self.cv_table)
+        history = self.previous_versions(self.db.list_cv_history(cv_id))
+
+        menu = QMenu(self)
+        history_menu = menu.addMenu("See history")
+        if not history:
+            empty = history_menu.addAction("No previous versions")
+            empty.setEnabled(False)
+        for entry in history:
+            action = history_menu.addAction(self.history_version_label(entry))
+            action.triggered.connect(
+                lambda _checked=False, selected=entry: self.open_cv_history_pdf(selected)
+            )
+        menu.exec(self.cv_table.viewport().mapToGlobal(position))
+
+    @staticmethod
+    def cv_from_history(entry: CVHistory) -> CV:
+        snapshot = entry.snapshot
+        return CV(
+            snapshot.get("id", entry.cv_id),
+            snapshot.get("name", "CV"),
+            snapshot.get("created_at", entry.recorded_at),
+            snapshot.get("sections", []),
+            DEFAULT_PROFILE | snapshot.get("profile", {}),
+            None,
+            None,
+        )
+
+    def open_cv_history_pdf(self, entry: CVHistory) -> None:
+        version_dir = self.data_dir / "exports" / "history" / f"cv-{entry.cv_id}" / f"version-{entry.version}"
+        pdf_path = next(version_dir.glob("*.pdf"), None) if version_dir.exists() else None
+        try:
+            if pdf_path is None:
+                _, pdf_path = export_cv(self.cv_from_history(entry), version_dir)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(pdf_path)))
+        except Exception as error:
+            QMessageBox.warning(self, "Historical PDF unavailable", f"Could not create this CV version's PDF:\n{error}")
+
+    def show_section_context_menu(self, position) -> None:
+        item = self.section_tree.itemAt(position)
+        section_item = self.library_section_item(item)
+        if not section_item:
+            return
+        self.section_tree.setCurrentItem(section_item)
+        section_id = section_item.data(0, TREE_DATA_ROLE)
+        history = self.previous_versions(self.db.list_section_history(section_id))
+
+        menu = QMenu(self)
+        history_menu = menu.addMenu("See history")
+        if not history:
+            empty = history_menu.addAction("No previous versions")
+            empty.setEnabled(False)
+        for entry in history:
+            action = history_menu.addAction(self.history_version_label(entry))
+            action.triggered.connect(
+                lambda _checked=False, selected=entry: self.preview_section_history(selected)
+            )
+        menu.exec(self.section_tree.viewport().mapToGlobal(position))
+
+    def preview_section_history(self, entry: SectionHistory) -> None:
+        snapshot = entry.snapshot
+        dialog = QDialog(self); dialog.setWindowTitle(f"{snapshot.get('title', 'Section')} · version {entry.version}"); dialog.resize(680, 560)
+        layout = QVBoxLayout(dialog)
+        metadata = snapshot.get("category", "Other")
+        if snapshot.get("labels"):
+            metadata += f" · {snapshot['labels']}"
+        layout.addWidget(title(
+            snapshot.get("title", "Section"),
+            f"Version {entry.version} · {entry.recorded_at.replace('T', ' ')} · {metadata}",
+        ))
+        content = QPlainTextEdit(snapshot.get("content", "")); content.setReadOnly(True)
+        content.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
+        layout.addWidget(content, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject); layout.addWidget(buttons)
+        dialog.exec()
 
     def refresh_applications(self) -> None:
         needle = self.application_search.text().strip().casefold() if hasattr(self, "application_search") else ""
@@ -1246,7 +1348,7 @@ class MainWindow(QMainWindow):
         filename, _ = QFileDialog.getSaveFileName(self, "Export CV Manager backup", "cv-manager-backup.json", "JSON files (*.json)")
         if not filename: return
         Path(filename).write_text(json.dumps(self.db.backup_data(), indent=2, ensure_ascii=False), encoding="utf-8")
-        QMessageBox.information(self, "Backup exported", "Your CVs, sections, applications, and profile were exported as JSON.")
+        QMessageBox.information(self, "Backup exported", "Your CVs, sections, histories, applications, and profile were exported as JSON.")
 
     def new_cv(self) -> None:
         if not self.db.profile_is_configured():
