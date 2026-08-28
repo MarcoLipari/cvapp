@@ -9,14 +9,15 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QSize, QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtCore import QDate, Signal, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QFileDialog, QPlainTextEdit, QStackedWidget, QTableWidget, QTableWidgetItem,
-    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from cv_export import export_cv, render_markdown
@@ -91,24 +92,108 @@ def install_exception_handler(log_path: Path) -> None:
     sys.excepthook = handle_exception
 
 
+class WrappingLineEditor(QPlainTextEdit):
+    """Edit one persisted line while wrapping it to the available width."""
+
+    editingFinished = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.document().setDocumentMargin(0)
+
+    def keyPressEvent(self, event):
+        if event.key() in {Qt.Key.Key_Enter, Qt.Key.Key_Return}:
+            self.editingFinished.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class ExistingTextEditDelegate(QStyledItemDelegate):
     """Open tree values with their existing text and a normal caret."""
 
+    _WRAPPED_TEXT_FLAGS = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        if index.column() != 1:
+            return size
+
+        wrapped_option = QStyleOptionViewItem(option)
+        self.initStyleOption(wrapped_option, index)
+        tree = self.parent()
+        available_width = tree.columnWidth(index.column()) if isinstance(tree, QTreeWidget) else option.rect.width()
+        text_width = max(1, available_width - 16)
+        bounds = wrapped_option.fontMetrics.boundingRect(
+            0, 0, text_width, 100_000,
+            int(self._WRAPPED_TEXT_FLAGS),
+            wrapped_option.text,
+        )
+        return QSize(size.width(), max(size.height(), bounds.height() + 16))
+
+    def paint(self, painter, option, index):
+        if index.column() != 1:
+            super().paint(painter, option, index)
+            return
+
+        wrapped_option = QStyleOptionViewItem(option)
+        self.initStyleOption(wrapped_option, index)
+        text = wrapped_option.text
+        wrapped_option.text = ""
+        style = wrapped_option.widget.style() if wrapped_option.widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, wrapped_option, painter, wrapped_option.widget)
+
+        text_rect = option.rect.adjusted(8, 5, -8, -5)
+        color_role = (
+            wrapped_option.palette.ColorRole.HighlightedText
+            if option.state & QStyle.StateFlag.State_Selected
+            else wrapped_option.palette.ColorRole.Text
+        )
+        painter.save()
+        painter.setClipRect(text_rect)
+        painter.setFont(wrapped_option.font)
+        painter.setPen(wrapped_option.palette.color(color_role))
+        painter.drawText(text_rect, int(self._WRAPPED_TEXT_FLAGS), text)
+        painter.restore()
+
     def createEditor(self, parent, option, index):
-        editor = super().createEditor(parent, option, index)
-        if isinstance(editor, QLineEdit):
+        if index.column() == 1:
+            editor = WrappingLineEditor(parent)
+            editor.editingFinished.connect(lambda: self.commit_and_close(editor))
             editor.setStyleSheet(
-                "QLineEdit { color: #0f172a; background-color: #ffffff; "
+                "QPlainTextEdit { color: #0f172a; background-color: #ffffff; "
                 "border: 2px solid #3b82f6; border-radius: 5px; padding: 3px 6px; "
                 "selection-color: #0f172a; selection-background-color: #bfdbfe; }"
             )
-        return editor
+            return editor
+        return super().createEditor(parent, option, index)
+
+    def commit_and_close(self, editor):
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor)
 
     def setEditorData(self, editor, index):
+        value = index.data(Qt.ItemDataRole.DisplayRole)
+        if isinstance(editor, WrappingLineEditor):
+            editor.setPlainText("" if value is None else str(value))
+
+            def position_wrapped_caret():
+                mouse_position = editor.viewport().mapFromGlobal(QCursor.pos())
+                if editor.viewport().rect().contains(mouse_position):
+                    editor.setTextCursor(editor.cursorForPosition(mouse_position))
+                else:
+                    cursor = editor.textCursor()
+                    cursor.setPosition(len(editor.toPlainText()))
+                    editor.setTextCursor(cursor)
+
+            QTimer.singleShot(0, position_wrapped_caret)
+            return
         if not isinstance(editor, QLineEdit):
             super().setEditorData(editor, index)
             return
-        value = index.data(Qt.ItemDataRole.DisplayRole)
         editor.setText("" if value is None else str(value))
 
         def position_caret():
@@ -122,6 +207,12 @@ class ExistingTextEditDelegate(QStyledItemDelegate):
             editor.deselect()
 
         QTimer.singleShot(0, position_caret)
+
+    def setModelData(self, editor, model, index):
+        if isinstance(editor, WrappingLineEditor):
+            model.setData(index, editor.toPlainText(), Qt.ItemDataRole.EditRole)
+            return
+        super().setModelData(editor, model, index)
 
     def updateEditorGeometry(self, editor, option, index):
         geometry = option.rect
@@ -478,8 +569,16 @@ class MainWindow(QMainWindow):
         self.cv_tree.setColumnCount(3); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Job labels"])
         self.cv_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.cv_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.cv_tree.setWordWrap(True)
+        self.cv_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.cv_tree.setItemDelegate(TreeEditDelegate(self.cv_tree))
-        self.cv_tree.header().setStretchLastSection(True)
+        self.cv_tree.header().setStretchLastSection(False)
+        self.cv_tree.header().setSectionResizeMode(0, self.cv_tree.header().ResizeMode.ResizeToContents)
+        self.cv_tree.header().setSectionResizeMode(1, self.cv_tree.header().ResizeMode.Stretch)
+        self.cv_tree.header().setSectionResizeMode(2, self.cv_tree.header().ResizeMode.ResizeToContents)
+        self.cv_tree.header().sectionResized.connect(
+            lambda column, _old, _new: QTimer.singleShot(0, self.cv_tree.doItemsLayout) if column == 1 else None
+        )
         layout.addWidget(self.cv_tree, 1)
 
         actions = QHBoxLayout()
@@ -603,7 +702,7 @@ class MainWindow(QMainWindow):
         root.setExpanded(True); profile.setExpanded(True)
         for index in range(root.childCount()):
             root.child(index).setExpanded(True)
-        self.cv_tree.resizeColumnToContents(0); self.cv_tree.resizeColumnToContents(1); self.cv_tree.setCurrentItem(root)
+        self.cv_tree.resizeColumnToContents(0); self.cv_tree.setCurrentItem(root)
 
     def add_tree_section(self) -> None:
         root = self.cv_tree.topLevelItem(0) if self.cv_tree.topLevelItemCount() else None
@@ -715,10 +814,15 @@ class MainWindow(QMainWindow):
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.section_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.section_tree.setIndentation(24); self.section_tree.setAnimated(True)
+        self.section_tree.setWordWrap(True)
+        self.section_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.section_tree.setItemDelegate(LibraryTreeEditDelegate(self.section_tree))
         self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
         self.section_tree.itemChanged.connect(self.refresh_section_preview)
         self.section_tree.header().setStretchLastSection(False); self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
+        self.section_tree.header().sectionResized.connect(
+            lambda column, _old, _new: QTimer.singleShot(0, self.section_tree.doItemsLayout) if column == 1 else None
+        )
         layout.addWidget(self.section_tree, 1)
         editor = QFrame(); editor.setProperty("card", True)
         editor_layout = QVBoxLayout(editor); editor_layout.setContentsMargins(18, 14, 18, 16); editor_layout.setSpacing(10)
