@@ -1185,6 +1185,11 @@ class MainWindow(QMainWindow):
         history = self.previous_versions(self.db.list_section_history(section_id))
 
         menu = QMenu(self)
+        duplicate = menu.addAction("Duplicate section")
+        duplicate.triggered.connect(lambda: self.duplicate_library_section(section_id))
+        delete = menu.addAction("Delete section")
+        delete.triggered.connect(lambda: self.delete_library_sections([section_id]))
+        menu.addSeparator()
         history_menu = menu.addMenu("See history")
         if not history:
             empty = history_menu.addAction("No previous versions")
@@ -1195,6 +1200,21 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, selected=entry: self.preview_section_history(selected)
             )
         menu.exec(self.section_tree.viewport().mapToGlobal(position))
+
+    def duplicate_library_section(self, section_id: int) -> None:
+        try:
+            duplicate_id = self.db.duplicate_section(section_id)
+        except ValueError:
+            QMessageBox.warning(self, "Section unavailable", "This section is no longer available to duplicate.")
+            self.refresh_all()
+            return
+        self.refresh_all()
+        for index in range(self.section_tree.topLevelItemCount()):
+            item = self.section_tree.topLevelItem(index)
+            if item.data(0, TREE_DATA_ROLE) == duplicate_id:
+                self.section_tree.setCurrentItem(item)
+                break
+        self.statusBar().showMessage("Created an independent section copy.", 6000)
 
     def preview_section_history(self, entry: SectionHistory) -> None:
         snapshot = entry.snapshot
@@ -1425,6 +1445,9 @@ class MainWindow(QMainWindow):
         if not section_ids:
             QMessageBox.information(self, "Select sections", "Select one or more sections to delete.")
             return
+        self.delete_library_sections(section_ids)
+
+    def delete_library_sections(self, section_ids: list[int]) -> None:
         subject = "this reusable section" if len(section_ids) == 1 else f"these {len(section_ids)} reusable sections"
         message = f"Delete {subject}? Existing CV snapshots will remain unchanged."
         if QMessageBox.question(self, "Delete sections", message) == QMessageBox.StandardButton.Yes:

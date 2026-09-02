@@ -319,6 +319,19 @@ class CVDatabase:
             self._record_section_history(db, section_id, "created")
             return section_id
 
+    def duplicate_section(self, section_id: int) -> int:
+        """Create an independent reusable copy of a library section."""
+        section = self.get_section(section_id)
+        if not section:
+            raise ValueError("Section not found")
+        return self.create_section(
+            section.title,
+            section.category,
+            section.content,
+            section.labels,
+            internal_name=f"{section.internal_name} (copy)",
+        )
+
     @classmethod
     def _update_section(
         cls,

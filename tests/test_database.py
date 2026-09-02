@@ -24,6 +24,23 @@ class DatabaseTests(unittest.TestCase):
         self.assertIsNone(saved.pdf_path)
         self.assertTrue(render_markdown(saved).startswith("# \n"))
 
+    def test_duplicate_section_creates_an_independent_copy(self):
+        section_id = self.db.create_section(
+            "Skills", "Skills", "Python and SQL", "backend", internal_name="Core skills"
+        )
+
+        duplicate_id = self.db.duplicate_section(section_id)
+
+        original = self.db.get_section(section_id)
+        duplicate = self.db.get_section(duplicate_id)
+        self.assertNotEqual(duplicate.id, original.id)
+        self.assertEqual(duplicate.title, original.title)
+        self.assertEqual(duplicate.category, original.category)
+        self.assertEqual(duplicate.content, original.content)
+        self.assertEqual(duplicate.labels, original.labels)
+        self.assertEqual(duplicate.internal_name, "Core skills (copy)")
+        self.assertEqual(self.db.list_section_history(duplicate_id)[0].change_type, "created")
+
     def test_section_and_linked_cv_changes_create_independent_history(self):
         section_id = self.db.create_section("Skills", "Skills", "Python", "backend")
         cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
