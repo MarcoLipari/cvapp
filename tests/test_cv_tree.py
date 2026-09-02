@@ -1,7 +1,7 @@
 import unittest
 
 from database import CVHistory
-from main import MainWindow, TREE_DATA_ROLE, TREE_KIND_ROLE
+from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE
 
 
 class CVTreeTests(unittest.TestCase):
@@ -54,6 +54,63 @@ class CVTreeTests(unittest.TestCase):
         self.assertEqual(section.childCount(), 2)
         self.assertEqual(section.child(0).data(0, TREE_KIND_ROLE), "content")
         self.assertEqual(section.child(1).data(0, TREE_KIND_ROLE), "content")
+
+    def test_chosen_linked_section_action_preserves_source_for_transactional_save(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section", "Skills", "Skills",
+            {"title": "Skills", "category": "Skills", "content": "Python", "source_section_id": 7},
+        )
+        section.setData(0, TREE_EDIT_MODE_ROLE, "copy")
+        section.addChild(MainWindow.tree_item("content", "Line", "Python and Rust"))
+        root.addChild(section)
+
+        _, sections, _ = MainWindow.tree_values(helper)
+
+        self.assertEqual(sections[0]["content"], "Python and Rust")
+        self.assertEqual(sections[0]["source_section_id"], 7)
+
+    def test_changed_linked_section_choice_is_deferred_until_save_resolution(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section", "Skills", "Skills",
+            {"title": "Skills", "category": "Skills", "content": "Python", "source_section_id": 7},
+        )
+        section.addChild(MainWindow.tree_item("content", "Line", "Python and Rust"))
+        root.addChild(section)
+        prompted = []
+
+        def choose(item):
+            prompted.append(item)
+            item.setData(0, TREE_EDIT_MODE_ROLE, "copy")
+            return True
+
+        helper.prompt_tree_section_action = choose
+
+        self.assertIsNone(section.data(0, TREE_EDIT_MODE_ROLE))
+        self.assertTrue(MainWindow.resolve_tree_section_actions(helper))
+        self.assertEqual(prompted, [section])
+        self.assertEqual(section.data(0, TREE_EDIT_MODE_ROLE), "copy")
+
+    def test_cancelled_save_resolution_keeps_tree_edit_unsaved(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section", "Skills", "Skills",
+            {"title": "Skills", "category": "Skills", "content": "Python", "source_section_id": 7},
+        )
+        section.addChild(MainWindow.tree_item("content", "Line", "Python and Rust"))
+        root.addChild(section)
+        helper.prompt_tree_section_action = lambda item: False
+
+        self.assertFalse(MainWindow.resolve_tree_section_actions(helper))
+        self.assertEqual(MainWindow.section_item_content(section), "Python and Rust")
+        self.assertIsNone(section.data(0, TREE_EDIT_MODE_ROLE))
 
     def test_library_child_resolves_to_owning_section(self):
         section = MainWindow.tree_item("section", "Experience", "Experience", 42)

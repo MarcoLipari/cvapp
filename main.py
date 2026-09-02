@@ -52,6 +52,7 @@ APP_STYLESHEET = """
 
 TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
 TREE_DATA_ROLE = TREE_KIND_ROLE + 1
+TREE_EDIT_MODE_ROLE = TREE_DATA_ROLE + 1
 LOGGER = logging.getLogger("cv_manager")
 
 
@@ -238,7 +239,7 @@ class LibraryTreeEditDelegate(ExistingTextEditDelegate):
 
     def createEditor(self, parent, option, index):
         kind = index.siblingAtColumn(0).data(TREE_KIND_ROLE)
-        editable_columns = {"section": {0, 1, 2}, "entry": {1}, "details": {1}, "content": {1}}
+        editable_columns = {"section": {0, 1, 2, 3}, "entry": {1}, "details": {1}, "content": {1}}
         if index.column() not in editable_columns.get(kind, set()):
             return None
         return super().createEditor(parent, option, index)
@@ -417,7 +418,10 @@ class CVDialog(QDialog):
         self.available = QListWidget(); self.available.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         for section in sections:
             labels = f"  ·  {section.labels}" if section.labels else ""
-            item = QListWidgetItem(f"{section.category}  ·  {section.title}{labels}"); item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
+            item = QListWidgetItem(
+                f"{section.internal_name}  ·  {section.category}  ·  CV heading: {section.title}{labels}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
         self.selected = QListWidget()
         if cv:
             for section in cv.sections:
@@ -566,7 +570,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header)
 
         self.cv_tree = QTreeWidget()
-        self.cv_tree.setColumnCount(3); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Job labels"])
+        self.cv_tree.setColumnCount(4); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Job labels", "Library link"])
         self.cv_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.cv_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.cv_tree.setWordWrap(True)
@@ -576,6 +580,7 @@ class MainWindow(QMainWindow):
         self.cv_tree.header().setSectionResizeMode(0, self.cv_tree.header().ResizeMode.ResizeToContents)
         self.cv_tree.header().setSectionResizeMode(1, self.cv_tree.header().ResizeMode.Stretch)
         self.cv_tree.header().setSectionResizeMode(2, self.cv_tree.header().ResizeMode.ResizeToContents)
+        self.cv_tree.header().setSectionResizeMode(3, self.cv_tree.header().ResizeMode.ResizeToContents)
         self.cv_tree.header().sectionResized.connect(
             lambda column, _old, _new: QTimer.singleShot(0, self.cv_tree.doItemsLayout) if column == 1 else None
         )
@@ -596,13 +601,21 @@ class MainWindow(QMainWindow):
             button = QPushButton(text) if primary else secondary_button(text)
             button.clicked.connect(action); actions.addWidget(button)
         actions.addStretch(); layout.addLayout(actions)
-        hint = QLabel("Double-click a value to edit it. Job labels are read-only. Markdown formatting, links, and bullet markers are preserved.")
+        hint = QLabel("Double-click a value to edit it. When you save changes to linked section content, choose whether to create a section copy or update every linked CV. Job labels are read-only.")
         hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
         return page
 
     @staticmethod
-    def tree_item(kind: str, node: str, value: str = "", data=None, editable: bool = True, labels: str = "") -> QTreeWidgetItem:
-        item = QTreeWidgetItem([node, value, labels])
+    def tree_item(
+        kind: str,
+        node: str,
+        value: str = "",
+        data=None,
+        editable: bool = True,
+        labels: str = "",
+        status: str = "",
+    ) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([node, value, labels, status])
         item.setData(0, TREE_KIND_ROLE, kind); item.setData(0, TREE_DATA_ROLE, data)
         if editable:
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -623,9 +636,17 @@ class MainWindow(QMainWindow):
         flat_sections = {"education", "personal details"}
         return not any(value.strip().casefold() in flat_sections for value in (category, title))
 
-    def add_section_content_to_tree(self, section_item: QTreeWidgetItem, content: str) -> None:
+    def add_section_content_to_tree(
+        self,
+        section_item: QTreeWidgetItem,
+        content: str,
+        category: str | None = None,
+        section_title: str | None = None,
+    ) -> None:
         lines = content.splitlines()
-        if not self.section_uses_entries(section_item.text(1), section_item.text(0)):
+        category = section_item.text(1) if category is None else category
+        section_title = section_item.text(0) if section_title is None else section_title
+        if not self.section_uses_entries(category, section_title):
             for line in lines:
                 section_item.addChild(self.tree_item("content", self.content_node_label(line), line))
             return
@@ -688,14 +709,16 @@ class MainWindow(QMainWindow):
         profile_labels = {"name": "Name", "phone": "Phone", "email": "Email", "github": "GitHub", "website": "Website"}
         for key, label in profile_labels.items():
             profile.addChild(self.tree_item("profile_field", label, cv.profile.get(key, ""), key))
-        library_labels = {section.id: section.labels for section in self.db.list_sections()}
+        library_sections = {section.id: section for section in self.db.list_sections()}
         for section in cv.sections:
+            source = library_sections.get(section.get("source_section_id"))
             section_item = self.tree_item(
                 "section",
                 section.get("title", "Untitled"),
                 section.get("category", "Other"),
                 dict(section),
-                labels=library_labels.get(section.get("source_section_id"), ""),
+                labels=source.labels if source else "",
+                status=f"Linked · {source.internal_name}" if source else "CV-specific",
             )
             root.addChild(section_item)
             self.add_section_content_to_tree(section_item, section.get("content", ""))
@@ -704,12 +727,86 @@ class MainWindow(QMainWindow):
             root.child(index).setExpanded(True)
         self.cv_tree.resizeColumnToContents(0); self.cv_tree.setCurrentItem(root)
 
+    def prompt_tree_section_action(self, section_item: QTreeWidgetItem) -> bool:
+        """Choose how a changed linked section should be saved."""
+        original = section_item.data(0, TREE_DATA_ROLE) or {}
+        source_section_id = original.get("source_section_id")
+        source = self.db.get_section(source_section_id) if source_section_id is not None else None
+        if not source:
+            return True
+
+        linked_count = self.db.count_linked_cvs(source.id)
+        cv_word = "CV" if linked_count == 1 else "CVs"
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Edit linked section")
+        dialog.setText(f'“{source.internal_name}” is a shared Section Library item.')
+        dialog.setInformativeText(
+            "Create a new reusable section for this CV, or edit the shared section and update every CV linked to it."
+        )
+        copy_button = dialog.addButton("Create section copy", QMessageBox.ButtonRole.AcceptRole)
+        shared_button = dialog.addButton(
+            f"Edit shared section (updates {linked_count} {cv_word})",
+            QMessageBox.ButtonRole.ActionRole,
+        )
+        dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(copy_button)
+        dialog.exec()
+
+        if dialog.clickedButton() is copy_button:
+            section_item.setData(0, TREE_EDIT_MODE_ROLE, "copy")
+            root = self.cv_tree.topLevelItem(0)
+            cv_name = root.text(1).strip() if root else "CV"
+            section_item.setText(3, f"New copy · {cv_name} | {source.internal_name}")
+            return True
+        if dialog.clickedButton() is shared_button:
+            section_item.setData(0, TREE_EDIT_MODE_ROLE, "shared")
+            section_item.setText(3, f"Shared edit · {source.internal_name}")
+            return True
+        return False
+
+    def resolve_tree_section_actions(self) -> bool:
+        """Prompt at save time for each linked section whose persisted content changed."""
+        root = self.cv_tree.topLevelItem(0)
+        chosen_items = []
+        for child_index in range(root.childCount()):
+            item = root.child(child_index)
+            if item.data(0, TREE_KIND_ROLE) != "section":
+                continue
+            original = item.data(0, TREE_DATA_ROLE) or {}
+            source_section_id = original.get("source_section_id")
+            if source_section_id is None:
+                continue
+            changed = any((
+                item.text(0).strip() != original.get("title", ""),
+                (item.text(1).strip() or "Other") != original.get("category", ""),
+                self.section_item_content(item) != original.get("content", ""),
+            ))
+            if not changed:
+                item.setData(0, TREE_EDIT_MODE_ROLE, None)
+                source = self.db.get_section(source_section_id)
+                item.setText(3, f"Linked · {source.internal_name}" if source else "CV-specific")
+                continue
+            if not item.data(0, TREE_EDIT_MODE_ROLE):
+                if not self.prompt_tree_section_action(item):
+                    for chosen_item in chosen_items:
+                        chosen_item.setData(0, TREE_EDIT_MODE_ROLE, None)
+                        chosen_original = chosen_item.data(0, TREE_DATA_ROLE) or {}
+                        chosen_source = self.db.get_section(chosen_original.get("source_section_id"))
+                        chosen_item.setText(
+                            3,
+                            f"Linked · {chosen_source.internal_name}" if chosen_source else "CV-specific",
+                        )
+                    return False
+                chosen_items.append(item)
+        return True
+
     def add_tree_section(self) -> None:
         root = self.cv_tree.topLevelItem(0) if self.cv_tree.topLevelItemCount() else None
         if not root or root.data(0, TREE_KIND_ROLE) != "cv":
             QMessageBox.information(self, "No CV selected", "Build or select a CV before adding a section.")
             return
-        section = self.tree_item("section", "New section", "Other", {})
+        section = self.tree_item("section", "New section", "Other", {}, status="CV-specific")
         entry = self.tree_item("entry", "Entry", "New entry")
         entry.addChild(self.tree_item("content", "Bullet", "- New bullet point"))
         entry.setExpanded(True)
@@ -782,10 +879,28 @@ class MainWindow(QMainWindow):
                 content = self.section_item_content(item)
                 section = {"title": item.text(0).strip(), "category": item.text(1).strip() or "Other", "content": content}
                 original = item.data(0, TREE_DATA_ROLE) or {}
-                if original.get("source_section_id") is not None and all(section[key] == original.get(key, "") for key in ("title", "category", "content")):
+                edit_mode = item.data(0, TREE_EDIT_MODE_ROLE)
+                if original.get("source_section_id") is not None and (
+                    edit_mode in {"copy", "shared"}
+                    or all(section[key] == original.get(key, "") for key in ("title", "category", "content"))
+                ):
                     section["source_section_id"] = original["source_section_id"]
                 sections.append(section)
         return name, sections, profile
+
+    def tree_section_actions(self) -> dict[int, str]:
+        root = self.cv_tree.topLevelItem(0)
+        actions = {}
+        section_index = 0
+        for child_index in range(root.childCount()):
+            item = root.child(child_index)
+            if item.data(0, TREE_KIND_ROLE) != "section":
+                continue
+            edit_mode = item.data(0, TREE_EDIT_MODE_ROLE)
+            if edit_mode:
+                actions[section_index] = edit_mode
+            section_index += 1
+        return actions
 
     def save_cv_tree(self) -> None:
         cv_id = self.tree_cv_picker.currentData()
@@ -796,21 +911,51 @@ class MainWindow(QMainWindow):
         if not name or not sections or any(not section["title"] or not section["content"] for section in sections):
             QMessageBox.warning(self, "Incomplete CV", "A CV needs a name and at least one titled section with content.")
             return
-        updated = self.db.update_cv(cv_id, name, sections, profile)
+        if not self.resolve_tree_section_actions():
+            return
+        name, sections, profile = self.tree_values()
         try:
-            markdown_path, pdf_path = export_cv(updated, self.data_dir / "exports")
-            self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
-            message = f'Saved and exported CV: {updated.name}'
-        except Exception as error:
-            message = f'Saved CV, but export failed: {error}'
-            QMessageBox.warning(self, "CV saved, export failed", message)
+            updated, affected_cv_ids, created_section_ids = self.db.update_cv_from_tree(
+                cv_id, name, sections, profile, self.tree_section_actions()
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "CV not saved", str(error))
+            return
+
+        failed_exports = []
+        export_ids = list(dict.fromkeys([updated.id, *affected_cv_ids]))
+        for export_cv_id in export_ids:
+            export_target = self.db.get_cv(export_cv_id)
+            if not export_target:
+                continue
+            try:
+                markdown_path, pdf_path = export_cv(export_target, self.data_dir / "exports")
+                self.db.update_cv_exports(export_target.id, markdown_path, pdf_path)
+            except Exception as error:
+                failed_exports.append(f"{export_target.name}: {error}")
+
+        copy_summary = ""
+        if created_section_ids:
+            noun = "copy" if len(created_section_ids) == 1 else "copies"
+            copy_summary = f" Created {len(created_section_ids)} section {noun}."
+        other_cv_count = len(set(affected_cv_ids) - {updated.id})
+        shared_summary = f" Updated {other_cv_count} other linked CV(s)." if other_cv_count else ""
+        message = f"Saved and exported CV: {updated.name}.{copy_summary}{shared_summary}"
+        if failed_exports:
+            QMessageBox.warning(
+                self,
+                "Changes saved, some exports failed",
+                "Your changes were saved, but these exports need attention:\n\n" + "\n".join(failed_exports),
+            )
+            message = "Changes saved, but some exports need attention."
         self.refresh_all(); self.statusBar().showMessage(message, 6000)
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout(); header.addWidget(title("Section library", "Edit reusable sections here. Changes update CVs that still use the linked section.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
         self.section_tree = QTreeWidget()
-        self.section_tree.setColumnCount(4); self.section_tree.setHeaderLabels(["Section / node", "Value / category", "Job labels", "Words"])
+        self.section_tree.setColumnCount(5)
+        self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Job labels", "Words"])
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.section_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.section_tree.setIndentation(24); self.section_tree.setAnimated(True)
@@ -821,7 +966,9 @@ class MainWindow(QMainWindow):
         self.section_tree.customContextMenuRequested.connect(self.show_section_context_menu)
         self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
         self.section_tree.itemChanged.connect(self.refresh_section_preview)
-        self.section_tree.header().setStretchLastSection(False); self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
+        self.section_tree.header().setStretchLastSection(False)
+        self.section_tree.header().setSectionResizeMode(0, self.section_tree.header().ResizeMode.ResizeToContents)
+        self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
         self.section_tree.header().sectionResized.connect(
             lambda column, _old, _new: QTimer.singleShot(0, self.section_tree.doItemsLayout) if column == 1 else None
         )
@@ -830,18 +977,19 @@ class MainWindow(QMainWindow):
         editor_layout = QVBoxLayout(editor); editor_layout.setContentsMargins(18, 14, 18, 16); editor_layout.setSpacing(10)
         editor_heading = QLabel("Selected section Markdown"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
         fields = QHBoxLayout()
-        self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("Section title")
+        self.section_editor_internal_name = QLineEdit(); self.section_editor_internal_name.setPlaceholderText("Library name")
+        self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("CV heading")
         self.section_editor_category = QComboBox(); self.section_editor_category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"]); self.section_editor_category.setEditable(True)
         self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Job labels")
-        self.section_editor_title.setReadOnly(True); self.section_editor_category.setEnabled(False); self.section_editor_labels.setReadOnly(True)
-        fields.addWidget(self.section_editor_title, 2); fields.addWidget(self.section_editor_category, 1); fields.addWidget(self.section_editor_labels, 2)
+        self.section_editor_internal_name.setReadOnly(True); self.section_editor_title.setReadOnly(True); self.section_editor_category.setEnabled(False); self.section_editor_labels.setReadOnly(True)
+        fields.addWidget(self.section_editor_internal_name, 2); fields.addWidget(self.section_editor_title, 2); fields.addWidget(self.section_editor_category, 1); fields.addWidget(self.section_editor_labels, 2)
         editor_layout.addLayout(fields)
         self.section_content_editor = QPlainTextEdit(); self.section_content_editor.setMinimumHeight(180)
         self.section_content_editor.setPlaceholderText("Select a section, then edit its complete content here.")
         self.section_content_editor.setReadOnly(True)
         self.section_content_editor.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
         editor_layout.addWidget(self.section_content_editor)
-        editor_hint = QLabel("Double-click a value in the hierarchy to edit it. This view shows the complete Markdown that will be saved.")
+        editor_hint = QLabel("Double-click the library name to rename it without changing linked CVs. The CV heading is the title shown in exports.")
         editor_hint.setProperty("muted", True); editor_layout.addWidget(editor_hint)
         self.section_preview_widget = editor; editor.hide(); layout.addWidget(editor)
         return page
@@ -885,10 +1033,18 @@ class MainWindow(QMainWindow):
         self.section_tree.clear()
         selected_item = None
         for section in sections:
-            item = self.tree_item("section", section.title, section.category, section.id, labels=section.labels or "—")
-            item.setText(3, str(len(section.content.split())))
+            item = QTreeWidgetItem([
+                section.internal_name,
+                section.title,
+                section.category,
+                section.labels or "—",
+                str(len(section.content.split())),
+            ])
+            item.setData(0, TREE_KIND_ROLE, "section")
+            item.setData(0, TREE_DATA_ROLE, section.id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.section_tree.addTopLevelItem(item)
-            self.add_section_content_to_tree(item, section.content)
+            self.add_section_content_to_tree(item, section.content, section.category, section.title)
             self.style_library_section(item)
             item.setExpanded(True)
             if section.id == selected_id:
@@ -896,6 +1052,7 @@ class MainWindow(QMainWindow):
         self.section_tree.resizeColumnToContents(0)
         self.section_tree.resizeColumnToContents(2)
         self.section_tree.resizeColumnToContents(3)
+        self.section_tree.resizeColumnToContents(4)
         if selected_item:
             self.section_tree.setCurrentItem(selected_item)
 
@@ -917,11 +1074,11 @@ class MainWindow(QMainWindow):
         entry_background = QBrush(QColor("#f8fafc"))
         primary = QBrush(QColor("#0f172a"))
         muted = QBrush(QColor("#64748b"))
-        for column in range(4):
+        for column in range(5):
             section_item.setBackground(column, section_background)
-            section_item.setForeground(column, primary if column < 2 else muted)
+            section_item.setForeground(column, primary if column < 3 else muted)
         section_item.setSizeHint(1, QSize(1, 38))
-        for column in (0, 1):
+        for column in (0, 1, 2):
             font = section_item.font(column); font.setBold(True); section_item.setFont(column, font)
 
         for child_index in range(section_item.childCount()):
@@ -930,7 +1087,7 @@ class MainWindow(QMainWindow):
                 entry.setForeground(0, muted)
                 entry.setSizeHint(1, QSize(1, 34))
                 continue
-            for column in range(4):
+            for column in range(5):
                 entry.setBackground(column, entry_background)
             entry.setSizeHint(1, QSize(1, 36))
             font = entry.font(0); font.setBold(True); entry.setFont(0, font)
@@ -1041,14 +1198,16 @@ class MainWindow(QMainWindow):
 
     def preview_section_history(self, entry: SectionHistory) -> None:
         snapshot = entry.snapshot
-        dialog = QDialog(self); dialog.setWindowTitle(f"{snapshot.get('title', 'Section')} · version {entry.version}"); dialog.resize(680, 560)
+        internal_name = snapshot.get("internal_name") or snapshot.get("title", "Section")
+        cv_heading = snapshot.get("title", "Section")
+        dialog = QDialog(self); dialog.setWindowTitle(f"{internal_name} · version {entry.version}"); dialog.resize(680, 560)
         layout = QVBoxLayout(dialog)
         metadata = snapshot.get("category", "Other")
         if snapshot.get("labels"):
             metadata += f" · {snapshot['labels']}"
         layout.addWidget(title(
-            snapshot.get("title", "Section"),
-            f"Version {entry.version} · {entry.recorded_at.replace('T', ' ')} · {metadata}",
+            internal_name,
+            f"CV heading: {cv_heading} · Version {entry.version} · {entry.recorded_at.replace('T', ' ')} · {metadata}",
         ))
         content = QPlainTextEdit(snapshot.get("content", "")); content.setReadOnly(True)
         content.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
@@ -1117,6 +1276,7 @@ class MainWindow(QMainWindow):
         if not enabled:
             self.section_preview_widget.hide()
             self.section_preview_button.setText("Show Markdown")
+        self.section_editor_internal_name.setEnabled(enabled)
         self.section_editor_title.setEnabled(enabled)
         self.section_editor_category.setEnabled(False)
         self.section_editor_labels.setEnabled(enabled)
@@ -1131,15 +1291,16 @@ class MainWindow(QMainWindow):
         current = self.library_section_item(self.section_tree.currentItem())
         if not item or (current and item is not current):
             return
-        labels = item.text(2).strip()
-        self.section_editor_title.setText(item.text(0))
-        self.section_editor_category.setCurrentText(item.text(1) or "Other")
+        labels = item.text(3).strip()
+        self.section_editor_internal_name.setText(item.text(0))
+        self.section_editor_title.setText(item.text(1))
+        self.section_editor_category.setCurrentText(item.text(2) or "Other")
         self.section_editor_labels.setText("" if labels == "—" else labels)
         content = self.section_item_content(item)
         self.section_content_editor.setPlainText(content)
         word_count = str(len(content.split()))
-        if item.text(3) != word_count:
-            item.setText(3, word_count)
+        if item.text(4) != word_count:
+            item.setText(4, word_count)
 
     @staticmethod
     def selected_id(table: QTableWidget) -> int | None:
@@ -1217,19 +1378,28 @@ class MainWindow(QMainWindow):
         if not item:
             QMessageBox.information(self, "Select a section", "Select a section or one of its content nodes before saving.")
             return
-        title = item.text(0).strip()
-        category = item.text(1).strip() or "Other"
-        labels = item.text(2).strip()
+        internal_name = item.text(0).strip()
+        title = item.text(1).strip()
+        category = item.text(2).strip() or "Other"
+        labels = item.text(3).strip()
         if labels == "—":
             labels = ""
         content = self.section_item_content(item)
-        if not title or not content:
-            QMessageBox.warning(self, "Incomplete section", "A section needs both a title and content.")
+        if not internal_name or not title or not content:
+            QMessageBox.warning(self, "Incomplete section", "A section needs an internal name, CV heading, and content.")
             return
-        self.update_library_section(item.data(0, TREE_DATA_ROLE), title, category, content, labels)
+        self.update_library_section(item.data(0, TREE_DATA_ROLE), internal_name, title, category, content, labels)
 
-    def update_library_section(self, section_id: int, title: str, category: str, content: str, labels: str = "") -> None:
-        affected_cv_ids = self.db.update_section(section_id, title, category, content, labels)
+    def update_library_section(
+        self,
+        section_id: int,
+        internal_name: str,
+        title: str,
+        category: str,
+        content: str,
+        labels: str = "",
+    ) -> None:
+        affected_cv_ids = self.db.update_section(section_id, title, category, content, labels, internal_name)
         failed_exports = []
         for cv_id in affected_cv_ids:
             cv = self.db.get_cv(cv_id)

@@ -96,6 +96,108 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(saved_cv.markdown_path, "saved.md")
         self.assertEqual(saved_cv.pdf_path, "saved.pdf")
 
+    def test_internal_name_is_library_only_metadata_and_preserves_links(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python", internal_name="Shared skills")
+        cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+        self.db.update_cv_exports(cv.id, "saved.md", "saved.pdf")
+
+        affected_cv_ids = self.db.update_section(
+            section_id, "Skills", "Skills", "Python", internal_name="Backend skills"
+        )
+
+        section = self.db.get_section(section_id)
+        saved_cv = self.db.get_cv(cv.id)
+        self.assertEqual(section.internal_name, "Backend skills")
+        self.assertEqual(affected_cv_ids, [])
+        self.assertEqual(saved_cv.sections[0]["source_section_id"], section_id)
+        self.assertEqual(saved_cv.sections[0]["title"], "Skills")
+        self.assertEqual(saved_cv.markdown_path, "saved.md")
+        self.assertEqual(saved_cv.pdf_path, "saved.pdf")
+
+    def test_tree_section_copy_creates_library_item_and_relinks_only_current_cv(self):
+        section_id = self.db.create_section(
+            "Skills", "Skills", "Python", "backend", internal_name="Core skills"
+        )
+        current = self.db.create_cv("Acme role", [self.db.get_section(section_id)])
+        other = self.db.create_cv("Other role", [self.db.get_section(section_id)])
+        edited_sections = [{
+            "title": "Skills",
+            "category": "Skills",
+            "content": "Python and Rust",
+            "source_section_id": section_id,
+        }]
+
+        updated, affected_cv_ids, created_section_ids = self.db.update_cv_from_tree(
+            current.id, current.name, edited_sections, current.profile, {0: "copy"}
+        )
+
+        self.assertEqual(affected_cv_ids, [])
+        self.assertEqual(len(created_section_ids), 1)
+        copied_id = created_section_ids[0]
+        copied = self.db.get_section(copied_id)
+        self.assertEqual(copied.internal_name, "Acme role | Core skills")
+        self.assertEqual(copied.title, "Skills")
+        self.assertEqual(copied.content, "Python and Rust")
+        self.assertEqual(copied.labels, "backend")
+        self.assertEqual(updated.sections[0]["source_section_id"], copied_id)
+        self.assertEqual(self.db.get_cv(other.id).sections[0]["source_section_id"], section_id)
+        self.assertEqual(self.db.get_cv(other.id).sections[0]["content"], "Python")
+
+        self.db.update_section(
+            copied_id, copied.title, copied.category, copied.content, copied.labels,
+            internal_name="Acme tailored skills",
+        )
+        self.assertEqual(self.db.get_cv(current.id).sections[0]["source_section_id"], copied_id)
+        self.assertEqual(self.db.get_cv(current.id).sections[0]["title"], "Skills")
+
+    def test_tree_shared_edit_updates_every_linked_cv(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python", internal_name="Core skills")
+        current = self.db.create_cv("Acme role", [self.db.get_section(section_id)])
+        other = self.db.create_cv("Other role", [self.db.get_section(section_id)])
+        self.db.update_cv_exports(current.id, "current.md", "current.pdf")
+        self.db.update_cv_exports(other.id, "other.md", "other.pdf")
+        edited_sections = [{
+            "title": "Technical Skills",
+            "category": "Skills",
+            "content": "Python and Rust",
+            "source_section_id": section_id,
+        }]
+
+        updated, affected_cv_ids, created_section_ids = self.db.update_cv_from_tree(
+            current.id, current.name, edited_sections, current.profile, {0: "shared"}
+        )
+
+        self.assertEqual(set(affected_cv_ids), {current.id, other.id})
+        self.assertEqual(created_section_ids, [])
+        self.assertEqual(self.db.get_section(section_id).internal_name, "Core skills")
+        self.assertEqual(updated.sections[0]["title"], "Technical Skills")
+        linked = self.db.get_cv(other.id)
+        self.assertEqual(linked.sections[0]["content"], "Python and Rust")
+        self.assertEqual(linked.sections[0]["source_section_id"], section_id)
+        self.assertIsNone(updated.pdf_path)
+        self.assertIsNone(linked.pdf_path)
+
+    def test_tree_section_actions_are_atomic(self):
+        first_id = self.db.create_section("Skills", "Skills", "Python")
+        second_id = self.db.create_section("Projects", "Projects", "Project")
+        cv = self.db.create_cv("Acme role", [self.db.get_section(first_id), self.db.get_section(second_id)])
+        edited_sections = [dict(section, content=f"{section['content']} changed") for section in cv.sections]
+
+        with self.assertRaisesRegex(ValueError, "Unknown linked-section action"):
+            self.db.update_cv_from_tree(
+                cv.id, cv.name, edited_sections, cv.profile, {0: "copy", 1: "invalid"}
+            )
+
+        self.assertEqual(len(self.db.list_sections()), 2)
+        self.assertEqual(self.db.get_cv(cv.id).sections, cv.sections)
+
+    def test_linked_cv_count_counts_each_cv_once(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        self.db.create_cv("First", [self.db.get_section(section_id)])
+        self.db.create_cv("Second", [self.db.get_section(section_id)])
+
+        self.assertEqual(self.db.count_linked_cvs(section_id), 2)
+
     def test_cv_specific_section_edit_is_not_changed_by_library_update(self):
         section_id = self.db.create_section("Skills", "Skills", "Python")
         cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
@@ -206,6 +308,7 @@ class DatabaseTests(unittest.TestCase):
         migrated = CVDatabase(legacy_path)
 
         self.assertEqual(migrated.get_section(1).labels, "")
+        self.assertEqual(migrated.get_section(1).internal_name, "Skills")
 
     def test_backup_contains_every_user_record(self):
         section_id = self.db.create_section("Skills", "Skills", "Python")
