@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QTreeWidgetItem
 
 from database import CVDatabase, CVHistory
-from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE
+from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE, is_bullet_item
 
 
 class CVTreeTests(unittest.TestCase):
@@ -128,6 +128,43 @@ class CVTreeTests(unittest.TestCase):
         self.assertIs(owner, section)
         self.assertEqual(owner.data(0, TREE_KIND_ROLE), "section")
         self.assertEqual(owner.data(0, TREE_DATA_ROLE), 42)
+
+    def test_library_bullet_can_move_between_adjacent_bullets(self):
+        entry = MainWindow.tree_item("entry", "Entry", "Developer")
+        first = MainWindow.tree_item("content", "Bullet", "- First")
+        second = MainWindow.tree_item("content", "Bullet", "- Second")
+        entry.addChildren([first, second])
+        helper = type("LibraryHelper", (), {})()
+        helper.library_bullet_move_target = MainWindow.library_bullet_move_target
+        helper.library_bullet_moved = lambda _item: None
+        helper.section_tree = type("Tree", (), {"setCurrentItem": lambda self, item: None})()
+
+        MainWindow.move_library_bullet(helper, first, 1)
+
+        self.assertEqual([entry.child(index).text(1) for index in range(2)], ["- Second", "- First"])
+        self.assertTrue(is_bullet_item(first))
+
+    def test_library_bullet_does_not_move_across_non_bullet_content(self):
+        entry = MainWindow.tree_item("entry", "Entry", "Developer")
+        details = MainWindow.tree_item("details", "Organization / location", "Example Co")
+        bullet = MainWindow.tree_item("content", "Bullet", "- First")
+        entry.addChildren([details, bullet])
+
+        self.assertIsNone(MainWindow.library_bullet_move_target(bullet, -1))
+
+    def test_library_bullet_inserts_below_clicked_content(self):
+        helper = self.tree_helper()
+        helper.section_uses_entries = MainWindow.section_uses_entries
+        section = MainWindow.tree_item("section", "Experience", "Experience")
+        entry = MainWindow.tree_item("entry", "Entry", "Developer")
+        first = MainWindow.tree_item("content", "Bullet", "- First")
+        entry.addChild(first)
+        section.addChild(entry)
+
+        parent, row = MainWindow.library_bullet_insertion_point(helper, first)
+
+        self.assertIs(parent, entry)
+        self.assertEqual(row, 1)
 
     def test_library_edit_is_autosaved_before_a_section_is_duplicated(self):
         with tempfile.TemporaryDirectory() as directory:

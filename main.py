@@ -10,7 +10,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Signal, QSize, QStandardPaths, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices
+from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QDesktopServices, QDrag
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -54,6 +54,78 @@ TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
 TREE_DATA_ROLE = TREE_KIND_ROLE + 1
 TREE_EDIT_MODE_ROLE = TREE_DATA_ROLE + 1
 LOGGER = logging.getLogger("cv_manager")
+
+
+def is_bullet_item(item: QTreeWidgetItem | None) -> bool:
+    """Return whether a tree row is a Markdown bullet."""
+    return bool(
+        item
+        and item.data(0, TREE_KIND_ROLE) == "content"
+        and item.text(1).startswith(("- ", "* "))
+    )
+
+
+class LibraryTreeWidget(QTreeWidget):
+    """Allow bullets to be dragged only within their current entry."""
+
+    bulletMoved = Signal(object)
+
+    def startDrag(self, _supported_actions) -> None:
+        current = self.currentItem()
+        if not is_bullet_item(current):
+            return
+        self.clearSelection()
+        current.setSelected(True)
+        drag = QDrag(self)
+        drag.setMimeData(self.mimeData([current]))
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def _valid_bullet_drop(self, event) -> tuple[QTreeWidgetItem, QTreeWidgetItem] | None:
+        source = self.currentItem()
+        target = self.itemAt(event.position().toPoint())
+        indicator = self.dropIndicatorPosition()
+        if (
+            not is_bullet_item(source)
+            or not is_bullet_item(target)
+            or source is target
+            or source.parent() is None
+            or source.parent() is not target.parent()
+            or indicator not in {
+                QAbstractItemView.DropIndicatorPosition.AboveItem,
+                QAbstractItemView.DropIndicatorPosition.BelowItem,
+            }
+        ):
+            return None
+        return source, target
+
+    def dragMoveEvent(self, event) -> None:
+        super().dragMoveEvent(event)
+        if self._valid_bullet_drop(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        items = self._valid_bullet_drop(event)
+        if not items:
+            event.ignore()
+            return
+        source, target = items
+        parent = source.parent()
+        source_row = parent.indexOfChild(source)
+        insertion_row = parent.indexOfChild(target)
+        if self.dropIndicatorPosition() == QAbstractItemView.DropIndicatorPosition.BelowItem:
+            insertion_row += 1
+        if source_row < insertion_row:
+            insertion_row -= 1
+        if insertion_row == source_row:
+            event.ignore()
+            return
+        parent.takeChild(source_row)
+        parent.insertChild(insertion_row, source)
+        self.setCurrentItem(source)
+        event.acceptProposedAction()
+        self.bulletMoved.emit(source)
 
 
 def configure_logging(data_dir: Path) -> Path:
@@ -1048,7 +1120,7 @@ class MainWindow(QMainWindow):
         self.section_heading_filter.addItem("All CV headings", None)
         self.section_heading_filter.currentIndexChanged.connect(self.apply_section_heading_filter)
         filters.addWidget(self.section_heading_filter); filters.addStretch(); layout.addLayout(filters)
-        self.section_tree = QTreeWidget()
+        self.section_tree = LibraryTreeWidget()
         self.section_tree.setColumnCount(5)
         self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Section keywords", "Words"])
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
@@ -1057,8 +1129,11 @@ class MainWindow(QMainWindow):
         self.section_tree.setWordWrap(True)
         self.section_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.section_tree.setItemDelegate(LibraryTreeEditDelegate(self.section_tree))
+        self.section_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.section_tree.setDropIndicatorShown(True)
         self.section_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.section_tree.customContextMenuRequested.connect(self.show_section_context_menu)
+        self.section_tree.bulletMoved.connect(self.library_bullet_moved)
         self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
         self.section_tree.itemChanged.connect(self.refresh_section_preview)
         self.section_tree.itemChanged.connect(self.autosave_library_section)
@@ -1304,11 +1379,25 @@ class MainWindow(QMainWindow):
         section_item = self.library_section_item(item)
         if not section_item:
             return
-        self.section_tree.setCurrentItem(section_item)
+        self.section_tree.setCurrentItem(item)
         section_id = section_item.data(0, TREE_DATA_ROLE)
         history = self.previous_versions(self.db.list_section_history(section_id))
 
         menu = QMenu(self)
+        insertion = self.library_bullet_insertion_point(item)
+        if insertion:
+            add_label = "Add bullet below" if item.data(0, TREE_KIND_ROLE) in {"content", "details"} else "Add bullet"
+            add_bullet = menu.addAction(add_label)
+            add_bullet.triggered.connect(lambda: self.add_library_bullet(item))
+        if is_bullet_item(item):
+            move_up = menu.addAction("Move bullet up")
+            move_up.setEnabled(self.library_bullet_move_target(item, -1) is not None)
+            move_up.triggered.connect(lambda: self.move_library_bullet(item, -1))
+            move_down = menu.addAction("Move bullet down")
+            move_down.setEnabled(self.library_bullet_move_target(item, 1) is not None)
+            move_down.triggered.connect(lambda: self.move_library_bullet(item, 1))
+        if insertion or is_bullet_item(item):
+            menu.addSeparator()
         duplicate = menu.addAction("Duplicate section")
         duplicate.triggered.connect(lambda: self.duplicate_library_section(section_id))
         delete = menu.addAction("Delete section")
@@ -1324,6 +1413,84 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, selected=entry: self.preview_section_history(selected)
             )
         menu.exec(self.section_tree.viewport().mapToGlobal(position))
+
+    def library_bullet_insertion_point(
+        self, item: QTreeWidgetItem | None
+    ) -> tuple[QTreeWidgetItem, int] | None:
+        """Find the parent and row for a bullet created from a context-menu target."""
+        if not item:
+            return None
+        kind = item.data(0, TREE_KIND_ROLE)
+        if kind == "entry":
+            return item, item.childCount()
+        if kind in {"content", "details"}:
+            parent = item.parent()
+            if parent and parent.data(0, TREE_KIND_ROLE) in {"entry", "section"}:
+                return parent, parent.indexOfChild(item) + 1
+            return None
+        if kind != "section":
+            return None
+        if not self.section_uses_entries(item.text(2), item.text(1)):
+            return item, item.childCount()
+        entries = [
+            item.child(index)
+            for index in range(item.childCount())
+            if item.child(index).data(0, TREE_KIND_ROLE) == "entry"
+        ]
+        if len(entries) == 1:
+            return entries[0], entries[0].childCount()
+        return None
+
+    @staticmethod
+    def library_bullet_move_target(
+        item: QTreeWidgetItem | None, offset: int
+    ) -> QTreeWidgetItem | None:
+        if not is_bullet_item(item) or offset not in {-1, 1}:
+            return None
+        parent = item.parent()
+        if not parent:
+            return None
+        target_row = parent.indexOfChild(item) + offset
+        if not 0 <= target_row < parent.childCount():
+            return None
+        target = parent.child(target_row)
+        return target if is_bullet_item(target) else None
+
+    def add_library_bullet(self, target: QTreeWidgetItem) -> None:
+        insertion = self.library_bullet_insertion_point(target)
+        if not insertion:
+            return
+        parent, row = insertion
+        bullet = self.tree_item("content", "Bullet", "- New bullet point")
+        parent.insertChild(row, bullet)
+        parent.setExpanded(True)
+        section_item = self.library_section_item(parent)
+        if section_item:
+            self.style_library_section(section_item)
+            self.autosave_library_section(section_item)
+            self.refresh_section_preview(section_item)
+        self.section_tree.setCurrentItem(bullet)
+        self.section_tree.editItem(bullet, 1)
+
+    def move_library_bullet(self, item: QTreeWidgetItem, offset: int) -> None:
+        target = self.library_bullet_move_target(item, offset)
+        if not target:
+            return
+        parent = item.parent()
+        source_row = parent.indexOfChild(item)
+        target_row = parent.indexOfChild(target)
+        parent.takeChild(source_row)
+        parent.insertChild(target_row, item)
+        self.section_tree.setCurrentItem(item)
+        self.library_bullet_moved(item)
+
+    def library_bullet_moved(self, item: QTreeWidgetItem) -> None:
+        section_item = self.library_section_item(item)
+        if not section_item:
+            return
+        self.autosave_library_section(section_item)
+        self.refresh_section_preview(section_item)
+        self.statusBar().showMessage("Bullet order autosaved.", 2500)
 
     def duplicate_library_section(self, section_id: int) -> None:
         current = self.library_section_item(self.section_tree.currentItem())
