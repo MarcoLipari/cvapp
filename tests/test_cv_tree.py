@@ -155,6 +155,59 @@ class CVTreeTests(unittest.TestCase):
 
         self.assertEqual(MainWindow.previous_versions(history), ["previous", "oldest"])
 
+    def test_section_heading_filter_hides_non_matches_and_clears_hidden_selection(self):
+        class Item:
+            def __init__(self, heading):
+                self.heading = heading
+                self.hidden = False
+
+            def parent(self):
+                return None
+
+            def data(self, column, role):
+                return "section" if role == TREE_KIND_ROLE else None
+
+            def text(self, column):
+                return self.heading if column == 1 else ""
+
+            def setHidden(self, hidden):
+                self.hidden = hidden
+
+            def isHidden(self):
+                return self.hidden
+
+        skills = Item("Skills")
+        experience = Item("Experience")
+
+        class Tree:
+            def __init__(self):
+                self.items = [skills, experience]
+                self.current = experience
+
+            def topLevelItemCount(self):
+                return len(self.items)
+
+            def topLevelItem(self, index):
+                return self.items[index]
+
+            def currentItem(self):
+                return self.current
+
+            def setCurrentItem(self, item):
+                self.current = item
+
+        helper = type("FilterHelper", (), {})()
+        helper.section_tree = Tree()
+        helper.section_heading_filter = type("Filter", (), {"currentData": lambda self: "Skills"})()
+        helper.library_section_item = MainWindow.library_section_item
+        helper.refresh_section_details = lambda: None
+
+        MainWindow.apply_section_heading_filter(helper)
+
+        self.assertFalse(skills.isHidden())
+        self.assertTrue(experience.isHidden())
+        self.assertIsNone(helper.section_tree.currentItem())
+
 
 if __name__ == "__main__":
     unittest.main()

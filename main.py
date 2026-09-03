@@ -956,6 +956,14 @@ class MainWindow(QMainWindow):
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout(); header.addWidget(title("Section library", "Edit reusable sections here. Changes update CVs that still use the linked section.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
+        filters = QHBoxLayout()
+        filters.addWidget(QLabel("CV heading"))
+        self.section_heading_filter = QComboBox()
+        self.section_heading_filter.setMinimumWidth(220)
+        self.section_heading_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.section_heading_filter.addItem("All CV headings", None)
+        self.section_heading_filter.currentIndexChanged.connect(self.apply_section_heading_filter)
+        filters.addWidget(self.section_heading_filter); filters.addStretch(); layout.addLayout(filters)
         self.section_tree = QTreeWidget()
         self.section_tree.setColumnCount(5)
         self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Section keywords", "Words"])
@@ -1033,6 +1041,16 @@ class MainWindow(QMainWindow):
 
     def fill_section_tree(self, sections: list[Section]) -> None:
         selected_id = self.selected_section_id()
+        selected_heading = self.section_heading_filter.currentData()
+        headings = sorted({section.title.strip() for section in sections if section.title.strip()}, key=str.casefold)
+        self.section_heading_filter.blockSignals(True)
+        self.section_heading_filter.clear()
+        self.section_heading_filter.addItem("All CV headings", None)
+        for heading in headings:
+            self.section_heading_filter.addItem(heading, heading)
+        filter_index = self.section_heading_filter.findData(selected_heading)
+        self.section_heading_filter.setCurrentIndex(filter_index if filter_index >= 0 else 0)
+        self.section_heading_filter.blockSignals(False)
         self.section_tree.clear()
         selected_item = None
         for section in sections:
@@ -1058,6 +1076,20 @@ class MainWindow(QMainWindow):
         self.section_tree.resizeColumnToContents(4)
         if selected_item:
             self.section_tree.setCurrentItem(selected_item)
+        self.apply_section_heading_filter()
+
+    def apply_section_heading_filter(self, _index: int | None = None) -> None:
+        """Show only library sections with the selected exported CV heading."""
+        if not hasattr(self, "section_tree"):
+            return
+        heading = self.section_heading_filter.currentData()
+        current = self.library_section_item(self.section_tree.currentItem())
+        for index in range(self.section_tree.topLevelItemCount()):
+            item = self.section_tree.topLevelItem(index)
+            item.setHidden(heading is not None and item.text(1) != heading)
+        if current and current.isHidden():
+            self.section_tree.setCurrentItem(None)
+            self.refresh_section_details()
 
     @staticmethod
     def section_item_content(section_item: QTreeWidgetItem) -> str:
