@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 from PySide6.QtWidgets import QMessageBox, QTreeWidgetItem
 
-from database import CVDatabase, CVHistory
+from cv_export import CVOverflowError
+from database import CV, CVDatabase, CVHistory
 from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE, is_bullet_item
 
 
@@ -17,6 +18,69 @@ class CVTreeTests(unittest.TestCase):
         helper.section_uses_entries = MainWindow.section_uses_entries
         helper.section_item_content = MainWindow.section_item_content
         return helper
+
+    def test_overflow_warning_can_continue_with_multipage_export(self):
+        cv = CV(
+            id=7,
+            name="Long CV",
+            created_at="2026-09-03T00:00:00",
+            sections=[],
+            profile={"name": "Ada Lovelace"},
+            markdown_path=None,
+            pdf_path=None,
+        )
+        expected = (Path("cv.md"), Path("cv.pdf"))
+        shrink_button = object()
+        multipage_button = object()
+
+        with (
+            patch("main.export_cv", side_effect=[CVOverflowError(), expected]) as exporter,
+            patch("main.QMessageBox") as message_box,
+        ):
+            dialog = message_box.return_value
+            dialog.addButton.side_effect = [shrink_button, multipage_button, None]
+            dialog.clickedButton.return_value = multipage_button
+
+            result = MainWindow.export_cv_with_overflow_warning(
+                None,
+                cv,
+                Path("exports"),
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(exporter.call_count, 2)
+        exporter.assert_called_with(cv, Path("exports"), allow_multipage=True)
+
+    def test_overflow_warning_can_shrink_to_one_page(self):
+        cv = CV(
+            id=7,
+            name="Long CV",
+            created_at="2026-09-03T00:00:00",
+            sections=[],
+            profile={"name": "Ada Lovelace"},
+            markdown_path=None,
+            pdf_path=None,
+        )
+        expected = (Path("cv.md"), Path("cv.pdf"))
+        shrink_button = object()
+
+        with (
+            patch("main.export_cv", side_effect=[CVOverflowError(), expected]) as exporter,
+            patch("main.QMessageBox") as message_box,
+        ):
+            dialog = message_box.return_value
+            dialog.addButton.side_effect = [shrink_button, object(), None]
+            dialog.clickedButton.return_value = shrink_button
+
+            result = MainWindow.export_cv_with_overflow_warning(
+                None,
+                cv,
+                Path("exports"),
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(exporter.call_count, 2)
+        exporter.assert_called_with(cv, Path("exports"), shrink_to_fit=True)
 
     def test_groups_entry_bullets_and_preserves_section_content(self):
         content = (

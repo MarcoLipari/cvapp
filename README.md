@@ -63,7 +63,7 @@ Use standard Markdown links for clickable blue, underlined text in the PDF:
 - Integrated [OpenLineage](https://github.com/OpenLineage/OpenLineage/tree/main) for data lineage.
 ```
 
-The PDF exporter always targets one US letter page. It uses the normal reference styling first, then progressively tightens spacing and type only when the selected content would overflow. If the content would become unreadable, export stops and asks you to shorten a section rather than generating a second page.
+The PDF exporter targets one US letter page at the standard reference sizes: 24 pt name, 10 pt contact details, 12 pt section headings, and 11 pt body text. If the selected content overflows, the app warns you and offers three choices: shrink the formatting to produce a one-page PDF, keep the standard sizes and flow onto additional Letter pages, or cancel and shorten the CV.
 
 ## Safari integration
 

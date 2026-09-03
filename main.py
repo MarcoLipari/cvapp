@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from cv_export import export_cv, render_markdown
+from cv_export import CVOverflowError, export_cv, render_markdown
 from cv_importer import ImportResult, import_cv
 from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
 from safari_bridge_store import SafariBridgeStore
@@ -1169,13 +1169,18 @@ class MainWindow(QMainWindow):
             return False
 
         failed_exports = []
+        cancelled_exports = []
         export_ids = list(dict.fromkeys([updated.id, *affected_cv_ids]))
         for export_cv_id in export_ids:
             export_target = self.db.get_cv(export_cv_id)
             if not export_target:
                 continue
             try:
-                markdown_path, pdf_path = export_cv(export_target, self.data_dir / "exports")
+                exported = self.export_cv_with_overflow_warning(export_target, self.data_dir / "exports")
+                if exported is None:
+                    cancelled_exports.append(export_target.name)
+                    continue
+                markdown_path, pdf_path = exported
                 self.db.update_cv_exports(export_target.id, markdown_path, pdf_path)
             except Exception as error:
                 failed_exports.append(f"{export_target.name}: {error}")
@@ -1194,6 +1199,8 @@ class MainWindow(QMainWindow):
                 "Your changes were saved, but these exports need attention:\n\n" + "\n".join(failed_exports),
             )
             message = "Changes saved, but some exports need attention."
+        elif cancelled_exports:
+            message = "Changes saved, but some exports were cancelled."
         self._tree_dirty = False
         self._tree_cv_id = updated.id
         if refresh:
@@ -1461,7 +1468,13 @@ class MainWindow(QMainWindow):
         pdf_path = next(version_dir.glob("*.pdf"), None) if version_dir.exists() else None
         try:
             if pdf_path is None:
-                _, pdf_path = export_cv(self.cv_from_history(entry), version_dir)
+                exported = self.export_cv_with_overflow_warning(
+                    self.cv_from_history(entry),
+                    version_dir,
+                )
+                if exported is None:
+                    return
+                _, pdf_path = exported
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(pdf_path)))
         except Exception as error:
             QMessageBox.warning(self, "Historical PDF unavailable", f"Could not create this CV version's PDF:\n{error}")
@@ -1928,12 +1941,17 @@ class MainWindow(QMainWindow):
             self.db.record_cv_version(cv_id, "linked_section_updated")
 
         failed_exports = []
+        cancelled_exports = []
         for cv_id in affected_cv_ids:
             cv = self.db.get_cv(cv_id)
             if not cv:
                 continue
             try:
-                markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
+                exported = self.export_cv_with_overflow_warning(cv, self.data_dir / "exports")
+                if exported is None:
+                    cancelled_exports.append(cv.name)
+                    continue
+                markdown_path, pdf_path = exported
                 self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
             except Exception as error:
                 failed_exports.append(f"{cv.name}: {error}")
@@ -1945,7 +1963,10 @@ class MainWindow(QMainWindow):
                 + "\n".join(failed_exports),
             )
         elif section_ids:
-            self.statusBar().showMessage("Saved Entry Library version.", 6000)
+            message = "Saved Entry Library version."
+            if cancelled_exports:
+                message += " Some CV exports were cancelled."
+            self.statusBar().showMessage(message, 6000)
 
     def update_library_section(
         self,
@@ -1958,10 +1979,15 @@ class MainWindow(QMainWindow):
     ) -> None:
         affected_cv_ids = self.db.update_section(section_id, title, category, content, labels, internal_name)
         failed_exports = []
+        cancelled_exports = []
         for cv_id in affected_cv_ids:
             cv = self.db.get_cv(cv_id)
             try:
-                markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
+                exported = self.export_cv_with_overflow_warning(cv, self.data_dir / "exports")
+                if exported is None:
+                    cancelled_exports.append(cv.name)
+                    continue
+                markdown_path, pdf_path = exported
                 self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
             except Exception as error:
                 failed_exports.append(f"{cv.name}: {error}")
@@ -1973,7 +1999,12 @@ class MainWindow(QMainWindow):
                 "The linked CV content was updated, but these exports need attention:\n\n" + "\n".join(failed_exports),
             )
         elif affected_cv_ids:
-            self.statusBar().showMessage(f"Updated this section in {len(affected_cv_ids)} linked CV(s) and regenerated their exports.", 6000)
+            message = f"Updated this section in {len(affected_cv_ids)} linked CV(s)."
+            if cancelled_exports:
+                message += " Some CV exports were cancelled."
+            else:
+                message += " Regenerated their exports."
+            self.statusBar().showMessage(message, 6000)
         else:
             self.statusBar().showMessage("Saved reusable entry changes.", 6000)
 
@@ -2095,6 +2126,41 @@ class MainWindow(QMainWindow):
         Path(filename).write_text(json.dumps(self.db.backup_data(), indent=2, ensure_ascii=False), encoding="utf-8")
         QMessageBox.information(self, "Backup exported", "Your CVs, sections, histories, applications, and profile were exported as JSON.")
 
+    def export_cv_with_overflow_warning(
+        self,
+        cv: CV,
+        output_dir: str | Path,
+    ) -> tuple[Path, Path] | None:
+        """Let the user choose how an overfull CV should be exported."""
+        try:
+            return export_cv(cv, output_dir)
+        except CVOverflowError:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setWindowTitle("CV exceeds one page")
+            dialog.setText(
+                f'“{cv.name}” does not fit on one Letter page at the standard reference sizes.'
+            )
+            dialog.setInformativeText(
+                "Shrink the formatting to keep a one-page PDF, use additional "
+                "pages at the standard sizes, or cancel and shorten the CV."
+            )
+            shrink_button = dialog.addButton(
+                "Shrink to one page",
+                QMessageBox.ButtonRole.AcceptRole,
+            )
+            multipage_button = dialog.addButton(
+                "Use multiple pages",
+                QMessageBox.ButtonRole.ActionRole,
+            )
+            dialog.addButton(QMessageBox.StandardButton.Cancel)
+            dialog.exec()
+            if dialog.clickedButton() is shrink_button:
+                return export_cv(cv, output_dir, shrink_to_fit=True)
+            if dialog.clickedButton() is multipage_button:
+                return export_cv(cv, output_dir, allow_multipage=True)
+            return None
+
     def new_cv(self) -> None:
         if not self.db.profile_is_configured():
             self.prompt_for_initial_profile()
@@ -2109,8 +2175,10 @@ class MainWindow(QMainWindow):
                 keywords=dialog.keywords.text(),
             )
             try:
-                markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
-                self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
+                exported = self.export_cv_with_overflow_warning(cv, self.data_dir / "exports")
+                if exported is not None:
+                    markdown_path, pdf_path = exported
+                    self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
             except Exception as error:
                 QMessageBox.warning(self, "CV saved, export failed", f"The CV snapshot was saved but could not be exported:\n{error}")
             self.refresh_all()
@@ -2127,9 +2195,13 @@ class MainWindow(QMainWindow):
             keywords=dialog.keywords.text(),
         )
         try:
-            markdown_path, pdf_path = export_cv(updated, self.data_dir / "exports")
-            self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
-            self.statusBar().showMessage(f'Updated and exported CV: {updated.name}', 6000)
+            exported = self.export_cv_with_overflow_warning(updated, self.data_dir / "exports")
+            if exported is not None:
+                markdown_path, pdf_path = exported
+                self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
+                self.statusBar().showMessage(f'Updated and exported CV: {updated.name}', 6000)
+            else:
+                self.statusBar().showMessage(f'Updated CV; export cancelled: {updated.name}', 6000)
         except Exception as error:
             QMessageBox.warning(self, "CV updated, export failed", f"The CV snapshot was updated but could not be exported:\n{error}")
         self.refresh_all()
@@ -2163,7 +2235,10 @@ class MainWindow(QMainWindow):
         cv = self.selected_cv()
         if not cv: return
         try:
-            markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
+            exported = self.export_cv_with_overflow_warning(cv, self.data_dir / "exports")
+            if exported is None:
+                return
+            markdown_path, pdf_path = exported
             self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
             self.refresh_all()
             QMessageBox.information(self, "Export regenerated", "The Markdown and PDF were regenerated from this CV's saved snapshot.")

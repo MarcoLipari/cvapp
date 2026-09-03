@@ -9,6 +9,10 @@ from pathlib import Path
 from database import CV, DEFAULT_PROFILE
 
 
+class CVOverflowError(ValueError):
+    """Raised when a CV needs more than one page at the reference sizes."""
+
+
 def render_markdown(cv: CV) -> str:
     """Render a CV snapshot as editable Markdown in the personal CV format."""
     profile = DEFAULT_PROFILE | cv.profile
@@ -50,9 +54,18 @@ def _link(url: str) -> str:
     return f'<a href="{html.escape(href, quote=True)}">{html.escape(url)}</a>'
 
 
-def export_cv(cv: CV, output_dir: str | Path) -> tuple[Path, Path]:
+def export_cv(
+    cv: CV,
+    output_dir: str | Path,
+    *,
+    allow_multipage: bool = False,
+    shrink_to_fit: bool = False,
+) -> tuple[Path, Path]:
     from PySide6.QtCore import QMarginsF
     from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QPainter
+
+    if allow_multipage and shrink_to_fit:
+        raise ValueError("Choose either multipage output or shrink-to-fit, not both")
 
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
     profile = DEFAULT_PROFILE | cv.profile
@@ -74,7 +87,13 @@ def export_cv(cv: CV, output_dir: str | Path) -> tuple[Path, Path]:
     writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Point)
     painter = QPainter(writer)
     try:
-        _draw_reference_layout(painter, markdown, profile)
+        _draw_reference_layout(
+            painter,
+            markdown,
+            profile,
+            allow_multipage=allow_multipage,
+            shrink_to_fit=shrink_to_fit,
+        )
         painter.end()
         if not pending_pdf_path.exists():
             raise RuntimeError("Qt did not create the PDF")
@@ -104,10 +123,13 @@ def _validate_ats_text_layer(pdf_path: Path, cv: CV, profile: dict[str, str]) ->
 
     document = QPdfDocument()
     error = document.load(str(pdf_path))
-    if error != QPdfDocument.Error.None_ or document.pageCount() != 1:
-        raise RuntimeError("The exported PDF is not a readable one-page document")
+    if error != QPdfDocument.Error.None_ or document.pageCount() < 1:
+        raise RuntimeError("The exported PDF is not a readable document")
 
-    extracted = document.getAllText(0).text()
+    extracted = "\n".join(
+        document.getAllText(page).text()
+        for page in range(document.pageCount())
+    )
     normalized_extracted = " ".join(_tokens(extracted))
     required_fields = [profile["name"]]
     required_fields.extend(value for value in profile.values() if value)
@@ -136,7 +158,14 @@ def _validate_ats_text_layer(pdf_path: Path, cv: CV, profile: dict[str, str]) ->
         raise RuntimeError("The exported PDF text layer does not contain enough of the CV content")
 
 
-def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> None:
+def _draw_reference_layout(
+    painter,
+    markdown: str,
+    profile: dict[str, str],
+    *,
+    allow_multipage: bool = False,
+    shrink_to_fit: bool = False,
+) -> None:
     """Draw a CV with the measured typography and spacing of the reference PDF."""
     from PySide6.QtCore import QPointF, QRectF, Qt
     from PySide6.QtGui import QFont, QFontMetricsF, QTextDocument
@@ -180,12 +209,26 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
         font.setBold(bold); font.setItalic(italic)
         return font
 
-    def layout(density: float, draw: bool = False) -> float:
-        body = 11.33 * density
+    def layout(density: float, draw: bool = False, paginate: bool = False) -> float:
+        body = 11.00 * density
         y = top
 
-        # Measured reference sizes: 24pt name, 10pt contact, 12pt section,
-        # and 11.33pt body/metadata.
+        def ensure_space(height: float) -> None:
+            nonlocal y
+            if not paginate or y + height <= page_height - bottom:
+                return
+            if draw:
+                if not painter.device().newPage():
+                    raise RuntimeError("Qt could not add another PDF page")
+                painter.fillRect(
+                    QRectF(0, 0, page_width, page_height),
+                    Qt.GlobalColor.white,
+                )
+                painter.setPen(Qt.GlobalColor.black)
+            y = top
+
+        # Reference sizes: 24pt name, 10pt contact, 12pt section,
+        # and 11pt body/metadata.
         # QPdfWriter emits these direct bold glyphs at 75% of the requested
         # size, so use the calibrated values that yield the reference PDF's
         # 24pt title and 12pt section labels.
@@ -219,10 +262,12 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
                 y += 2.7 * density
                 painter.setFont(plain_font(15.43 * density, bold=True))
                 metrics = QFontMetricsF(painter.font())
+                trailing_space = (9.0 if next_line and " :: " not in next_line else 12.5) * density
+                ensure_space(metrics.height() + trailing_space)
                 if draw:
                     painter.drawText(QPointF(left, y + metrics.ascent()), line[3:].upper())
                     painter.drawLine(QPointF(left, y + metrics.height() + 1.5 * density), QPointF(left + content_width, y + metrics.height() + 1.5 * density))
-                y += metrics.height() + (9.0 if next_line and " :: " not in next_line else 12.5) * density
+                y += metrics.height() + trailing_space
             elif not line:
                 y += 1.5 * density
             elif " :: " in line:
@@ -241,6 +286,7 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
                     content_width * 0.28,
                 )
                 height = max(left_doc.size().height(), right_doc.size().height())
+                ensure_space(height)
                 if draw:
                     draw_document(left_doc, left, y, True)
                     painter.save(); painter.translate(left + content_width * 0.72, y)
@@ -251,6 +297,7 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
                     y += 6.0 * density
             elif line.startswith("- ") or line.startswith("* "):
                 bullet_doc = document(_inline(line[2:]), body, content_width - 9.0 * density)
+                ensure_space(bullet_doc.size().height())
                 painter.setFont(plain_font(body))
                 metrics = QFontMetricsF(painter.font())
                 if draw:
@@ -258,22 +305,31 @@ def _draw_reference_layout(painter, markdown: str, profile: dict[str, str]) -> N
                 y += draw_document(bullet_doc, left + 8.5 * density, y, draw)
             else:
                 body_doc = document(_inline(line), body, content_width)
+                ensure_space(body_doc.size().height())
                 y += draw_document(body_doc, left, y, draw)
         return y
 
-    # Qt lays out HTML point sizes at 96 dpi while the PDF uses 72 dpi. A
-    # 0.75 scale therefore reproduces the source document's physical type
-    # sizes (24 pt name, 10 pt contact, 12 pt headings, 11.33 pt body). Only
-    # shrink denser tailored variants when the reference size would overflow.
-    low, high, best = 0.58, 0.75, 0.58
-    if layout(low) > page_height - bottom:
-        raise ValueError("This CV cannot fit legibly on one page. Remove or shorten a section, then export again.")
-    for _ in range(10):
-        candidate = (low + high) / 2
-        if layout(candidate) <= page_height - bottom:
-            best, low = candidate, candidate
-        else:
-            high = candidate
+    # Qt lays out HTML point sizes at 96 dpi while the PDF uses 72 dpi. This
+    # fixed density reproduces the source document's physical type sizes
+    # (24 pt name, 10 pt contact, 12 pt headings, 11 pt body). Never shrink
+    # an overfull CV, because that would make formatting vary between exports.
+    reference_density = 0.75
+    density = reference_density
+    overflows = layout(reference_density) > page_height - bottom
+    if overflows and shrink_to_fit:
+        low, high = 0.1, reference_density
+        if layout(low) > page_height - bottom:
+            raise ValueError("This CV has too much content to shrink onto one page")
+        for _ in range(12):
+            candidate = (low + high) / 2
+            if layout(candidate) <= page_height - bottom:
+                density, low = candidate, candidate
+            else:
+                high = candidate
+    elif overflows and not allow_multipage:
+        raise CVOverflowError(
+            "This CV cannot fit on one page at the standard reference sizes."
+        )
     painter.fillRect(QRectF(0, 0, page_width, page_height), Qt.GlobalColor.white)
     painter.setPen(Qt.GlobalColor.black)
-    layout(best, draw=True)
+    layout(density, draw=True, paginate=allow_multipage)

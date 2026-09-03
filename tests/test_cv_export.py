@@ -4,7 +4,7 @@ import unittest
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtPdf import QPdfDocument
 
-from cv_export import _inline, export_cv, render_markdown
+from cv_export import CVOverflowError, _inline, export_cv, render_markdown
 from database import CV
 
 
@@ -105,6 +105,49 @@ class CVExportTests(unittest.TestCase):
             )
             self.assertFalse(document.metaData(QPdfDocument.MetaDataField.Author))
             self.assertFalse(document.metaData(QPdfDocument.MetaDataField.Creator))
+
+    def test_export_rejects_overflow_instead_of_shrinking_reference_sizes(self):
+        cv = CV(
+            id=8,
+            name="Overfull CV",
+            created_at="2026-09-03T00:00:00",
+            sections=[
+                {
+                    "title": "Experience",
+                    "category": "Experience",
+                    "content": "**Software Engineer** :: *2020 - Present*\n"
+                    + "\n".join(
+                        f"- Delivered measurable result number {index}."
+                        for index in range(50)
+                    ),
+                }
+            ],
+            profile={"name": "Ada Lovelace", "email": "ada@example.com"},
+            markdown_path=None,
+            pdf_path=None,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(CVOverflowError, "standard reference sizes"):
+                export_cv(cv, directory)
+
+            _, pdf_path = export_cv(cv, directory, allow_multipage=True)
+            document = QPdfDocument()
+            self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
+            self.assertGreater(document.pageCount(), 1)
+            extracted = "\n".join(
+                document.getAllText(page).text()
+                for page in range(document.pageCount())
+            )
+            self.assertIn("Delivered measurable result number 49.", extracted)
+
+            _, pdf_path = export_cv(cv, directory, shrink_to_fit=True)
+            self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
+            self.assertEqual(document.pageCount(), 1)
+            self.assertIn(
+                "Delivered measurable result number 49.",
+                document.getAllText(0).text(),
+            )
 
 
 if __name__ == "__main__":
