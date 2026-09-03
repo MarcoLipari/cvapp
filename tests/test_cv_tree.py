@@ -1,8 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from PySide6.QtWidgets import QTreeWidgetItem
+from PySide6.QtWidgets import QMessageBox, QTreeWidgetItem
 
 from database import CVDatabase, CVHistory
 from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE, is_bullet_item
@@ -165,6 +166,29 @@ class CVTreeTests(unittest.TestCase):
 
         self.assertIs(parent, entry)
         self.assertEqual(row, 1)
+
+    def test_library_sub_entry_can_be_deleted_without_deleting_its_parent(self):
+        section = MainWindow.tree_item("section", "Projects", "Projects", 42)
+        first = MainWindow.tree_item("entry", "Entry", "Project A")
+        first.addChild(MainWindow.tree_item("content", "Bullet", "- First"))
+        second = MainWindow.tree_item("entry", "Entry", "Project B")
+        second.addChild(MainWindow.tree_item("content", "Bullet", "- Second"))
+        section.addChildren([first, second])
+
+        helper = type("LibraryHelper", (), {})()
+        helper.library_section_item = MainWindow.library_section_item
+        helper.section_item_content = MainWindow.section_item_content
+        helper.autosave_library_section = lambda item: True
+        helper.style_library_section = lambda item: None
+        helper.refresh_section_preview = lambda item: None
+        helper.section_tree = type("Tree", (), {"setCurrentItem": lambda self, item: None})()
+        helper.statusBar = lambda: type("Status", (), {"showMessage": lambda *args: None})()
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            MainWindow.delete_library_node(helper, first)
+
+        self.assertEqual(section.childCount(), 1)
+        self.assertEqual(section.child(0).text(1), "Project B")
 
     def test_library_edit_is_autosaved_before_a_section_is_duplicated(self):
         with tempfile.TemporaryDirectory() as directory:

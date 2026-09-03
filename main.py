@@ -54,6 +54,7 @@ TREE_KIND_ROLE = int(Qt.ItemDataRole.UserRole)
 TREE_DATA_ROLE = TREE_KIND_ROLE + 1
 TREE_EDIT_MODE_ROLE = TREE_DATA_ROLE + 1
 LOGGER = logging.getLogger("cv_manager")
+COMMON_CV_SECTIONS = ("Experience", "Projects", "Skills", "Education", "Profile", "Other")
 
 
 def is_bullet_item(item: QTreeWidgetItem | None) -> bool:
@@ -370,23 +371,70 @@ class ProfileDialog(QDialog):
 
 
 class SectionDialog(QDialog):
-    def __init__(self, section: Section | None = None, parent=None, show_labels: bool = True):
+    def __init__(
+        self,
+        section: Section | None = None,
+        parent=None,
+        show_labels: bool = True,
+        section_headings: list[str] | None = None,
+        section_categories: dict[str, str] | None = None,
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Edit section" if section else "New section")
+        self.show_library_fields = show_labels
+        self.setWindowTitle("Edit CV section" if section else "New reusable entry")
         self.resize(660, 520)
         layout = QVBoxLayout(self)
-        layout.addWidget(title(self.windowTitle(), "Formatting supported: **bold**, *italic*, links, and - bullets."))
+        subtitle = (
+            "Formatting supported: **bold**, *italic*, links, and - bullets."
+            if section else
+            "Name this entry, then choose the CV section that should contain it."
+        )
+        layout.addWidget(title(self.windowTitle(), subtitle))
         form = QFormLayout()
-        self.title = QLineEdit(section.title if section else "")
+        self.internal_name = QLineEdit(section.internal_name if section else "")
+        self.internal_name.setPlaceholderText("e.g. Payments migration project")
+        self.title = QComboBox()
+        self.title.setEditable(True)
+        seen_headings = set()
+        for heading in [*(section_headings or []), *COMMON_CV_SECTIONS]:
+            heading = heading.strip()
+            normalized = heading.casefold()
+            if heading and normalized not in seen_headings:
+                self.title.addItem(heading)
+                seen_headings.add(normalized)
+        if section:
+            self.title.setCurrentText(section.title)
+        else:
+            self.title.setCurrentIndex(-1)
+        self.title.lineEdit().setPlaceholderText("Choose or type a CV section…")
         self.category = QComboBox(); self.category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"])
         if section:
             self.category.setCurrentText(section.category)
+        else:
+            self.category.setCurrentText("Other")
+        self.section_categories = {
+            heading.casefold(): category
+            for heading, category in {
+                **{heading: heading for heading in COMMON_CV_SECTIONS},
+                **(section_categories or {}),
+            }.items()
+        }
+        self.title.currentTextChanged.connect(self.suggest_category)
         self.labels = QLineEdit(section.labels if section else "")
         self.labels.setPlaceholderText("e.g. backend, data engineering, fintech")
-        form.addRow("Section title", self.title); form.addRow("Category", self.category)
         if show_labels:
-            form.addRow("Section keywords (optional)", self.labels)
+            form.addRow("Library entry name", self.internal_name)
+        form.addRow("CV section heading", self.title); form.addRow("Category", self.category)
+        if show_labels:
+            form.addRow("Entry keywords (optional)", self.labels)
         layout.addLayout(form)
+        if show_labels:
+            section_hint = QLabel(
+                "Entries assigned to the same CV section are kept together under one heading."
+            )
+            section_hint.setProperty("muted", True)
+            section_hint.setWordWrap(True)
+            layout.addWidget(section_hint)
         self.content = QPlainTextEdit(section.content if section else "")
         self.content.setPlaceholderText("Example:\n**Data Engineering Intern** :: *May 2026 - Present*\n*Example Company* :: *Montreal, QC*\n- Built reliable data pipelines...\n- Improved reporting...")
         layout.addWidget(self.content, 1)
@@ -394,11 +442,21 @@ class SectionDialog(QDialog):
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
 
     def values(self) -> tuple[str, str, str, str]:
-        return self.title.text().strip(), self.category.currentText(), self.content.toPlainText().strip(), self.labels.text().strip()
+        return self.title.currentText().strip(), self.category.currentText(), self.content.toPlainText().strip(), self.labels.text().strip()
+
+    def library_name(self) -> str:
+        return self.internal_name.text().strip()
+
+    def suggest_category(self, heading: str) -> None:
+        category = self.section_categories.get(heading.strip().casefold())
+        self.category.setCurrentText(category or "Other")
 
     def accept(self) -> None:
-        if not self.title.text().strip() or not self.content.toPlainText().strip():
-            QMessageBox.warning(self, "Missing content", "A section needs both a title and content.")
+        if self.show_library_fields and not self.internal_name.text().strip():
+            QMessageBox.warning(self, "Missing name", "Give this reusable entry a library name.")
+            return
+        if not self.title.currentText().strip() or not self.content.toPlainText().strip():
+            QMessageBox.warning(self, "Missing content", "An entry needs a CV section heading and content.")
             return
         super().accept()
 
@@ -409,7 +467,7 @@ class CVImportDialog(QDialog):
         self.setWindowTitle("Import CV sections")
         self.resize(600, 500)
         layout = QVBoxLayout(self)
-        layout.addWidget(title("Review imported CV", "Choose which sections to add to your reusable section library."))
+        layout.addWidget(title("Review imported CV", "Choose which content to add to your reusable entry library."))
         self.sections = QListWidget()
         for section in result.sections:
             item = QListWidgetItem(f"{section.category}  ·  {section.title}")
@@ -481,8 +539,8 @@ class CVDialog(QDialog):
         self.resize(840, 540)
         outer = QVBoxLayout(self)
         explanation = (
-            "Change the name, content, sections, or order. Editing a section here stops future library updates from changing it."
-            if cv else f"This CV will copy {profile['name']}'s current details. Selected library sections remain linked until you edit them."
+            "Change the name, entries, or order. Editing an entry here stops future library updates from changing it."
+            if cv else f"Choose reusable entries for {profile['name']}. Entries with the same heading stay together as one CV section."
         )
         outer.addWidget(title(self.windowTitle(), explanation))
         form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name)
@@ -494,34 +552,68 @@ class CVDialog(QDialog):
         for section in sections:
             labels = f"  ·  {section.labels}" if section.labels else ""
             item = QListWidgetItem(
-                f"{section.internal_name}  ·  {section.category}  ·  CV heading: {section.title}{labels}"
+                f"{section.internal_name}  →  {section.title}{labels}"
             )
             item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
         self.selected = QListWidget()
         if cv:
+            library_sections = {section.id: section for section in sections}
             for section in cv.sections:
-                item = QListWidgetItem(f"{section.get('category', 'Other')}  ·  {section.get('title', 'Untitled')}")
+                source = library_sections.get(section.get("source_section_id"))
+                entry_name = source.internal_name if source else "Customized entry"
+                item = QListWidgetItem(f"{entry_name}  →  {section.get('title', 'Untitled')}")
                 item.setData(Qt.ItemDataRole.UserRole, dict(section))
                 self.selected.addItem(item)
         self.selected.itemDoubleClicked.connect(lambda _: self.edit_selected_section())
         controls = QVBoxLayout()
-        for text, action in [("Add →", self.add_sections), ("← Remove", self.remove_sections), ("Edit content", self.edit_selected_section), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
+        for text, action in [("Add entries →", self.add_sections), ("← Remove", self.remove_sections), ("Edit entry", self.edit_selected_section), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
             button = secondary_button(text); button.clicked.connect(action); controls.addWidget(button)
         controls.addStretch()
-        body.addWidget(self.available, 1); body.addLayout(controls); body.addWidget(self.selected, 1)
+        self.entry_search = QLineEdit(); self.entry_search.setPlaceholderText("Search entry names, CV sections, or keywords…")
+        self.entry_search.textChanged.connect(self.filter_available_entries)
+        available_panel = QVBoxLayout(); available_panel.addWidget(QLabel("Reusable entries")); available_panel.addWidget(self.entry_search); available_panel.addWidget(self.available, 1)
+        selected_panel = QVBoxLayout(); selected_panel.addWidget(QLabel("CV content (in order)")); selected_panel.addWidget(self.selected, 1)
+        body.addLayout(available_panel, 1); body.addLayout(controls); body.addLayout(selected_panel, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); outer.addWidget(buttons)
 
     def add_sections(self) -> None:
-        selected_library_ids = {
-            value.id for value in (self.selected.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.selected.count()))
-            if isinstance(value, Section)
-        }
+        selected_library_ids = set()
+        for index in range(self.selected.count()):
+            value = self.selected.item(index).data(Qt.ItemDataRole.UserRole)
+            if isinstance(value, Section):
+                selected_library_ids.add(value.id)
+            elif value.get("source_section_id") is not None:
+                selected_library_ids.add(value["source_section_id"])
         for item in self.available.selectedItems():
             section = item.data(Qt.ItemDataRole.UserRole)
             if section.id not in selected_library_ids:
                 clone = QListWidgetItem(item.text()); clone.setData(Qt.ItemDataRole.UserRole, section); self.selected.addItem(clone)
+                matching_rows = []
+                for row in range(self.selected.count() - 1):
+                    selected = self.selected.item(row).data(Qt.ItemDataRole.UserRole)
+                    selected_title = selected.title if isinstance(selected, Section) else selected.get("title")
+                    if selected_title == section.title:
+                        matching_rows.append(row)
+                if matching_rows:
+                    self.selected.takeItem(self.selected.row(clone))
+                    self.selected.insertItem(matching_rows[-1] + 1, clone)
                 selected_library_ids.add(section.id)
+
+    def filter_available_entries(self, text: str) -> None:
+        needle = text.strip().casefold()
+        self.available.clearSelection()
+        for index in range(self.available.count()):
+            item = self.available.item(index)
+            section = item.data(Qt.ItemDataRole.UserRole)
+            searchable = " ".join((
+                section.internal_name,
+                section.title,
+                section.category,
+                section.labels,
+                section.content,
+            )).casefold()
+            item.setHidden(bool(needle) and needle not in searchable)
 
     def remove_sections(self) -> None:
         for item in self.selected.selectedItems():
@@ -530,7 +622,7 @@ class CVDialog(QDialog):
     def edit_selected_section(self) -> None:
         item = self.selected.currentItem()
         if not item:
-            QMessageBox.information(self, "Select CV content", "Select a section from the right-hand list to edit its content for this CV.")
+            QMessageBox.information(self, "Select CV content", "Select an entry from the right-hand list to edit it for this CV.")
             return
         value = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(value, Section):
@@ -541,7 +633,7 @@ class CVDialog(QDialog):
         dialog.setWindowTitle("Edit CV section")
         if dialog.exec():
             section_title, category, content, _ = dialog.values()
-            item.setText(f"{category}  ·  {section_title}")
+            item.setText(f"Customized entry  →  {section_title}")
             item.setData(Qt.ItemDataRole.UserRole, {"title": section_title, "category": category, "content": content})
 
     def move(self, offset: int) -> None:
@@ -554,7 +646,7 @@ class CVDialog(QDialog):
 
     def accept(self) -> None:
         if not self.name.text().strip() or not self.chosen_sections():
-            QMessageBox.warning(self, "Incomplete CV", "Provide an internal name and add at least one section.")
+            QMessageBox.warning(self, "Incomplete CV", "Provide an internal name and add at least one entry.")
             return
         super().accept()
 
@@ -577,7 +669,7 @@ class MainWindow(QMainWindow):
         self._autosaved_linked_cv_ids: set[int] = set()
 
         self.nav = QListWidget(); self.nav.setFixedWidth(205)
-        self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Integration"])
+        self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Entry Library", "Personal Details", "Safari Integration"])
         nav_panel = QWidget(); nav_layout = QVBoxLayout(nav_panel); nav_layout.setContentsMargins(0, 0, 0, 0); nav_layout.setSpacing(0)
         nav_layout.addWidget(self.nav, 1)
         self.pages = QStackedWidget()
@@ -669,8 +761,8 @@ class MainWindow(QMainWindow):
 
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library sections update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
-        self.cv_table = self.table(["Name", "Job keywords", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
+        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library entries update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
+        self.cv_table = self.table(["Name", "Job keywords", "Created", "Entries", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
             ("identity", "Snapshot"), ("keywords", "Best suited for"), ("contact", "Contact details"), ("sections", "Section order"),
             ("applications", "Linked applications"), ("exports", "Export files"),
@@ -689,7 +781,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header)
 
         self.cv_tree = QTreeWidget()
-        self.cv_tree.setColumnCount(4); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Section keywords", "Library link"])
+        self.cv_tree.setColumnCount(4); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Entry keywords", "Library link"])
         self.cv_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.cv_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.cv_tree.setWordWrap(True)
@@ -721,7 +813,7 @@ class MainWindow(QMainWindow):
             button = QPushButton(text) if primary else secondary_button(text)
             button.clicked.connect(action); actions.addWidget(button)
         actions.addStretch(); layout.addLayout(actions)
-        hint = QLabel("Double-click a value to edit it. When you save changes to linked section content, choose whether to create a section copy or update every linked CV. Section keywords are read-only here.")
+        hint = QLabel("Double-click a value to edit it. When you save changes to linked entry content, choose whether to create an entry copy or update every linked CV. Entry keywords are read-only here.")
         hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
         return page
 
@@ -888,13 +980,13 @@ class MainWindow(QMainWindow):
         dialog = QMessageBox(self)
         dialog.setIcon(QMessageBox.Icon.Question)
         dialog.setWindowTitle("Edit linked section")
-        dialog.setText(f'“{source.internal_name}” is a shared Section Library item.')
+        dialog.setText(f'“{source.internal_name}” is a shared Entry Library item.')
         dialog.setInformativeText(
-            "Create a new reusable section for this CV, or edit the shared section and update every CV linked to it."
+            "Create a new reusable entry for this CV, or edit the shared entry and update every CV linked to it."
         )
-        copy_button = dialog.addButton("Create section copy", QMessageBox.ButtonRole.AcceptRole)
+        copy_button = dialog.addButton("Create entry copy", QMessageBox.ButtonRole.AcceptRole)
         shared_button = dialog.addButton(
-            f"Edit shared section (updates {linked_count} {cv_word})",
+            f"Edit shared entry (updates {linked_count} {cv_word})",
             QMessageBox.ButtonRole.ActionRole,
         )
         dialog.addButton(QMessageBox.StandardButton.Cancel)
@@ -1111,18 +1203,18 @@ class MainWindow(QMainWindow):
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Section library", "Edit reusable sections here. Changes update CVs that still use the linked section.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
+        header = QHBoxLayout(); header.addWidget(title("Entry library", "Build reusable projects, roles, skills, or other entries, then mix and match them in a CV.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New entry"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
         filters = QHBoxLayout()
-        filters.addWidget(QLabel("CV heading"))
+        filters.addWidget(QLabel("CV section"))
         self.section_heading_filter = QComboBox()
         self.section_heading_filter.setMinimumWidth(220)
         self.section_heading_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.section_heading_filter.addItem("All CV headings", None)
+        self.section_heading_filter.addItem("All CV sections", None)
         self.section_heading_filter.currentIndexChanged.connect(self.apply_section_heading_filter)
         filters.addWidget(self.section_heading_filter); filters.addStretch(); layout.addLayout(filters)
         self.section_tree = LibraryTreeWidget()
         self.section_tree.setColumnCount(5)
-        self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Section keywords", "Words"])
+        self.section_tree.setHeaderLabels(["Entry name / node", "CV section / value", "Category", "Entry keywords", "Words"])
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.section_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.section_tree.setIndentation(24); self.section_tree.setAnimated(True)
@@ -1146,21 +1238,21 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.section_tree, 1)
         editor = QFrame(); editor.setProperty("card", True)
         editor_layout = QVBoxLayout(editor); editor_layout.setContentsMargins(18, 14, 18, 16); editor_layout.setSpacing(10)
-        editor_heading = QLabel("Selected section Markdown"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
+        editor_heading = QLabel("Selected entry Markdown"); heading_font = editor_heading.font(); heading_font.setBold(True); editor_heading.setFont(heading_font); editor_layout.addWidget(editor_heading)
         fields = QHBoxLayout()
-        self.section_editor_internal_name = QLineEdit(); self.section_editor_internal_name.setPlaceholderText("Library name")
-        self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("CV heading")
+        self.section_editor_internal_name = QLineEdit(); self.section_editor_internal_name.setPlaceholderText("Entry name")
+        self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("CV section")
         self.section_editor_category = QComboBox(); self.section_editor_category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"]); self.section_editor_category.setEditable(True)
-        self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Section keywords")
+        self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Entry keywords")
         self.section_editor_internal_name.setReadOnly(True); self.section_editor_title.setReadOnly(True); self.section_editor_category.setEnabled(False); self.section_editor_labels.setReadOnly(True)
         fields.addWidget(self.section_editor_internal_name, 2); fields.addWidget(self.section_editor_title, 2); fields.addWidget(self.section_editor_category, 1); fields.addWidget(self.section_editor_labels, 2)
         editor_layout.addLayout(fields)
         self.section_content_editor = QPlainTextEdit(); self.section_content_editor.setMinimumHeight(180)
-        self.section_content_editor.setPlaceholderText("Select a section, then edit its complete content here.")
+        self.section_content_editor.setPlaceholderText("Select an entry, then edit its complete content here.")
         self.section_content_editor.setReadOnly(True)
         self.section_content_editor.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
         editor_layout.addWidget(self.section_content_editor)
-        editor_hint = QLabel("Double-click the library name to rename it without changing linked CVs. The CV heading is the title shown in exports.")
+        editor_hint = QLabel("Double-click the entry name to rename it without changing linked CVs. Adjacent entries with the same CV section are grouped under one heading when exported.")
         editor_hint.setProperty("muted", True); editor_layout.addWidget(editor_hint)
         self.section_preview_widget = editor; editor.hide(); layout.addWidget(editor)
         return page
@@ -1205,7 +1297,7 @@ class MainWindow(QMainWindow):
         headings = sorted({section.title.strip() for section in sections if section.title.strip()}, key=str.casefold)
         self.section_heading_filter.blockSignals(True)
         self.section_heading_filter.clear()
-        self.section_heading_filter.addItem("All CV headings", None)
+        self.section_heading_filter.addItem("All CV sections", None)
         for heading in headings:
             self.section_heading_filter.addItem(heading, heading)
         filter_index = self.section_heading_filter.findData(selected_heading)
@@ -1241,7 +1333,7 @@ class MainWindow(QMainWindow):
         self.apply_section_heading_filter()
 
     def apply_section_heading_filter(self, _index: int | None = None) -> None:
-        """Show only library sections with the selected exported CV heading."""
+        """Show only library entries with the selected exported CV section."""
         if not hasattr(self, "section_tree"):
             return
         heading = self.section_heading_filter.currentData()
@@ -1396,11 +1488,21 @@ class MainWindow(QMainWindow):
             move_down = menu.addAction("Move bullet down")
             move_down.setEnabled(self.library_bullet_move_target(item, 1) is not None)
             move_down.triggered.connect(lambda: self.move_library_bullet(item, 1))
+        kind = item.data(0, TREE_KIND_ROLE)
         if insertion or is_bullet_item(item):
             menu.addSeparator()
-        duplicate = menu.addAction("Duplicate section")
+        if kind in {"entry", "details", "content"}:
+            delete_labels = {
+                "entry": "Delete sub-entry",
+                "details": "Delete organization / location",
+                "content": "Delete bullet" if is_bullet_item(item) else "Delete line",
+            }
+            delete_node = menu.addAction(delete_labels[kind])
+            delete_node.triggered.connect(lambda: self.delete_library_node(item))
+            menu.addSeparator()
+        duplicate = menu.addAction("Duplicate entry")
         duplicate.triggered.connect(lambda: self.duplicate_library_section(section_id))
-        delete = menu.addAction("Delete section")
+        delete = menu.addAction("Delete entry")
         delete.triggered.connect(lambda: self.delete_library_sections([section_id]))
         menu.addSeparator()
         history_menu = menu.addMenu("See history")
@@ -1492,6 +1594,45 @@ class MainWindow(QMainWindow):
         self.refresh_section_preview(section_item)
         self.statusBar().showMessage("Bullet order autosaved.", 2500)
 
+    def delete_library_node(self, item: QTreeWidgetItem) -> None:
+        """Delete one nested entry or content line without deleting its library item."""
+        kind = item.data(0, TREE_KIND_ROLE)
+        if kind not in {"entry", "details", "content"}:
+            return
+        labels = {
+            "entry": "this sub-entry and all of its content",
+            "details": "this organization/location line",
+            "content": "this bullet or line",
+        }
+        if QMessageBox.question(
+            self,
+            "Delete selected content",
+            f"Delete {labels[kind]}? Linked CVs will be updated when library changes are committed.",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        section_item = self.library_section_item(item)
+        parent = item.parent()
+        if not section_item or not parent:
+            return
+        row = parent.indexOfChild(item)
+        removed = parent.takeChild(row)
+        if not self.section_item_content(section_item):
+            parent.insertChild(row, removed)
+            QMessageBox.information(
+                self,
+                "Entry needs content",
+                "A reusable entry cannot be empty. Delete the whole library entry instead.",
+            )
+            return
+        if not self.autosave_library_section(section_item):
+            parent.insertChild(row, removed)
+            return
+        self.style_library_section(section_item)
+        self.section_tree.setCurrentItem(section_item)
+        self.refresh_section_preview(section_item)
+        self.statusBar().showMessage("Selected content deleted and autosaved.", 3000)
+
     def duplicate_library_section(self, section_id: int) -> None:
         current = self.library_section_item(self.section_tree.currentItem())
         if current and current.data(0, TREE_DATA_ROLE) == section_id:
@@ -1500,7 +1641,7 @@ class MainWindow(QMainWindow):
         try:
             duplicate_id = self.db.duplicate_section(section_id)
         except ValueError:
-            QMessageBox.warning(self, "Section unavailable", "This section is no longer available to duplicate.")
+            QMessageBox.warning(self, "Entry unavailable", "This entry is no longer available to duplicate.")
             self.refresh_all()
             return
         self.refresh_all()
@@ -1509,7 +1650,7 @@ class MainWindow(QMainWindow):
             if item.data(0, TREE_DATA_ROLE) == duplicate_id:
                 self.section_tree.setCurrentItem(item)
                 break
-        self.statusBar().showMessage("Created an independent section copy.", 6000)
+        self.statusBar().showMessage("Created an independent entry copy.", 6000)
 
     def preview_section_history(self, entry: SectionHistory) -> None:
         snapshot = entry.snapshot
@@ -1522,7 +1663,7 @@ class MainWindow(QMainWindow):
             metadata += f" · {snapshot['labels']}"
         layout.addWidget(title(
             internal_name,
-            f"CV heading: {cv_heading} · Version {entry.version} · {entry.recorded_at.replace('T', ' ')} · {metadata}",
+            f"CV section: {cv_heading} · Version {entry.version} · {entry.recorded_at.replace('T', ' ')} · {metadata}",
         ))
         content = QPlainTextEdit(snapshot.get("content", "")); content.setReadOnly(True)
         content.setStyleSheet("QPlainTextEdit { font-family: Menlo, Monaco, monospace; font-size: 13px; padding: 14px; }")
@@ -1663,8 +1804,28 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Complete Personal Details before building a CV.", 10000)
 
     def new_section(self) -> None:
-        dialog = SectionDialog(parent=self)
-        if dialog.exec(): self.db.create_section(*dialog.values()); self.refresh_all()
+        sections = self.db.list_sections()
+        section_categories = {
+            section.title.strip(): section.category
+            for section in sections
+            if section.title.strip()
+        }
+        headings = sorted(section_categories, key=str.casefold)
+        dialog = SectionDialog(
+            parent=self,
+            section_headings=headings,
+            section_categories=section_categories,
+        )
+        if dialog.exec():
+            section_title, category, content, labels = dialog.values()
+            self.db.create_section(
+                section_title,
+                category,
+                content,
+                labels,
+                internal_name=dialog.library_name(),
+            )
+            self.refresh_all()
 
     def import_existing_cv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Import existing CV", "", "CV files (*.pdf *.md *.txt)")
@@ -1692,7 +1853,7 @@ class MainWindow(QMainWindow):
     def save_library_section(self) -> None:
         item = self.library_section_item(self.section_tree.currentItem())
         if not item:
-            QMessageBox.information(self, "Select a section", "Select a section or one of its content nodes before saving.")
+            QMessageBox.information(self, "Select an entry", "Select an entry or one of its content nodes before saving.")
             return
         internal_name = item.text(0).strip()
         title = item.text(1).strip()
@@ -1702,7 +1863,7 @@ class MainWindow(QMainWindow):
             labels = ""
         content = self.section_item_content(item)
         if not internal_name or not title or not content:
-            QMessageBox.warning(self, "Incomplete section", "A section needs an internal name, CV heading, and content.")
+            QMessageBox.warning(self, "Incomplete entry", "An entry needs a library name, CV section heading, and content.")
             return
         if self.autosave_library_section(item):
             self.commit_library_edits()
@@ -1734,7 +1895,7 @@ class MainWindow(QMainWindow):
             return True
         if not internal_name or not title or not content:
             self.statusBar().showMessage(
-                "Autosave paused: a section needs a library name, CV heading, and content.", 6000
+                "Autosave paused: an entry needs a library name, CV section heading, and content.", 6000
             )
             return False
         try:
@@ -1752,7 +1913,7 @@ class MainWindow(QMainWindow):
             return False
         self._dirty_section_ids.add(section_id)
         self._autosaved_linked_cv_ids.update(affected_cv_ids)
-        self.statusBar().showMessage("Section changes autosaved.", 2500)
+        self.statusBar().showMessage("Entry changes autosaved.", 2500)
         return True
 
     def commit_library_edits(self) -> None:
@@ -1784,7 +1945,7 @@ class MainWindow(QMainWindow):
                 + "\n".join(failed_exports),
             )
         elif section_ids:
-            self.statusBar().showMessage("Saved Section Library version.", 6000)
+            self.statusBar().showMessage("Saved Entry Library version.", 6000)
 
     def update_library_section(
         self,
@@ -1814,19 +1975,34 @@ class MainWindow(QMainWindow):
         elif affected_cv_ids:
             self.statusBar().showMessage(f"Updated this section in {len(affected_cv_ids)} linked CV(s) and regenerated their exports.", 6000)
         else:
-            self.statusBar().showMessage("Saved reusable section changes.", 6000)
+            self.statusBar().showMessage("Saved reusable entry changes.", 6000)
 
     def delete_section(self) -> None:
+        selected_items = self.section_tree.selectedItems()
+        nested_items = [
+            item for item in selected_items
+            if item.data(0, TREE_KIND_ROLE) in {"entry", "details", "content"}
+        ]
+        if nested_items:
+            if len(selected_items) == 1:
+                self.delete_library_node(nested_items[0])
+            else:
+                QMessageBox.information(
+                    self,
+                    "Select one content item",
+                    "Delete nested entries, lines, or bullets one at a time.",
+                )
+            return
         section_ids = self.selected_section_ids()
         if not section_ids:
-            QMessageBox.information(self, "Select sections", "Select one or more sections to delete.")
+            QMessageBox.information(self, "Select entries", "Select one or more entries to delete.")
             return
         self.delete_library_sections(section_ids)
 
     def delete_library_sections(self, section_ids: list[int]) -> None:
-        subject = "this reusable section" if len(section_ids) == 1 else f"these {len(section_ids)} reusable sections"
+        subject = "this reusable entry" if len(section_ids) == 1 else f"these {len(section_ids)} reusable entries"
         message = f"Delete {subject}? Existing CV snapshots will remain unchanged."
-        if QMessageBox.question(self, "Delete sections", message) == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, "Delete entries", message) == QMessageBox.StandardButton.Yes:
             self.db.delete_sections(section_ids)
             self.refresh_all()
 
@@ -1925,7 +2101,7 @@ class MainWindow(QMainWindow):
             if not self.db.profile_is_configured():
                 return
         sections = self.db.list_sections()
-        if not sections: QMessageBox.information(self, "Add content first", "Create at least one reusable section before building a CV."); return
+        if not sections: QMessageBox.information(self, "Add content first", "Create at least one reusable entry before building a CV."); return
         profile = self.db.get_profile(); dialog = CVDialog(sections, profile, parent=self)
         if dialog.exec():
             cv = self.db.create_cv(

@@ -14,8 +14,13 @@ def render_markdown(cv: CV) -> str:
     profile = DEFAULT_PROFILE | cv.profile
     contact = " | ".join(value for value in (profile["phone"], profile["email"], profile["github"], profile["website"]) if value)
     parts = [f"# {profile['name'].upper()}", contact, ""]
+    previous_title = None
     for section in cv.sections:
-        parts.extend([f"## {section['title']}", section["content"].strip(), ""])
+        title = section["title"]
+        if title != previous_title:
+            parts.append(f"## {title}")
+        parts.extend([section["content"].strip(), ""])
+        previous_title = title
     return "\n".join(parts).strip() + "\n"
 
 
@@ -114,13 +119,15 @@ def _validate_ats_text_layer(pdf_path: Path, cv: CV, profile: dict[str, str]) ->
     if missing:
         raise RuntimeError(f"The exported PDF text layer is missing: {', '.join(missing)}")
 
-    expected_text = " ".join(
-        list(profile.values())
-        + [
-            f"{section.get('title', '')} {_plain_markdown(section.get('content', ''))}"
-            for section in cv.sections
-        ]
-    )
+    expected_section_text = []
+    previous_title = None
+    for section in cv.sections:
+        title = section.get("title", "")
+        if title != previous_title:
+            expected_section_text.append(title)
+        expected_section_text.append(_plain_markdown(section.get("content", "")))
+        previous_title = title
+    expected_text = " ".join(list(profile.values()) + expected_section_text)
     expected_counts = Counter(_tokens(expected_text))
     extracted_counts = Counter(_tokens(extracted))
     matched_words = sum(min(count, extracted_counts[word]) for word, count in expected_counts.items())
