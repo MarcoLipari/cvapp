@@ -43,6 +43,7 @@ class CV:
     profile: dict[str, str]
     markdown_path: str | None
     pdf_path: str | None
+    keywords: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,8 @@ class CVDatabase:
                     sections_json TEXT NOT NULL,
                     profile_json TEXT NOT NULL DEFAULT '{}',
                     markdown_path TEXT,
-                    pdf_path TEXT
+                    pdf_path TEXT,
+                    keywords TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS applications (
                     id INTEGER PRIMARY KEY,
@@ -161,6 +163,8 @@ class CVDatabase:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(cvs)")}
             if "profile_json" not in columns:
                 db.execute("ALTER TABLE cvs ADD COLUMN profile_json TEXT NOT NULL DEFAULT '{}'")
+            if "keywords" not in columns:
+                db.execute("ALTER TABLE cvs ADD COLUMN keywords TEXT NOT NULL DEFAULT ''")
             application_columns = {row["name"] for row in db.execute("PRAGMA table_info(applications)")}
             if "posting_url" not in application_columns:
                 db.execute("ALTER TABLE applications ADD COLUMN posting_url TEXT NOT NULL DEFAULT ''")
@@ -190,7 +194,10 @@ class CVDatabase:
     @staticmethod
     def _cv(row: sqlite3.Row) -> CV:
         profile = DEFAULT_PROFILE | json.loads(row["profile_json"] or "{}")
-        return CV(row["id"], row["name"], row["created_at"], json.loads(row["sections_json"]), profile, row["markdown_path"], row["pdf_path"])
+        return CV(
+            row["id"], row["name"], row["created_at"], json.loads(row["sections_json"]),
+            profile, row["markdown_path"], row["pdf_path"], row["keywords"],
+        )
 
     @staticmethod
     def _application(row: sqlite3.Row) -> Application:
@@ -246,6 +253,7 @@ class CVDatabase:
             "created_at": cv.created_at,
             "sections": cv.sections,
             "profile": cv.profile,
+            "keywords": cv.keywords,
         }
         version = db.execute(
             "SELECT COALESCE(MAX(version), 0) + 1 FROM cv_history WHERE cv_id=?",
@@ -472,36 +480,56 @@ class CVDatabase:
             snapshot["source_section_id"] = int(section["source_section_id"])
         return snapshot
 
-    def create_cv(self, name: str, sections: list[Section | dict], profile: dict[str, str] | None = None) -> CV:
+    def create_cv(
+        self,
+        name: str,
+        sections: list[Section | dict],
+        profile: dict[str, str] | None = None,
+        keywords: str = "",
+    ) -> CV:
         snapshot = [self._section_snapshot(section) for section in sections]
         profile_snapshot = DEFAULT_PROFILE | (profile or self.get_profile())
         with self._connect() as db:
             cv_id = db.execute(
-                "INSERT INTO cvs(name, created_at, sections_json, profile_json) VALUES (?, ?, ?, ?)",
-                (name, datetime.now().isoformat(timespec="seconds"), json.dumps(snapshot), json.dumps(profile_snapshot)),
+                "INSERT INTO cvs(name, created_at, sections_json, profile_json, keywords) VALUES (?, ?, ?, ?, ?)",
+                (
+                    name, datetime.now().isoformat(timespec="seconds"), json.dumps(snapshot),
+                    json.dumps(profile_snapshot), keywords.strip(),
+                ),
             ).lastrowid
             self._record_cv_history(db, cv_id, "created")
         return self.get_cv(cv_id)
 
-    def update_cv(self, cv_id: int, name: str, sections: list[Section | dict], profile: dict[str, str] | None = None) -> CV:
+    def update_cv(
+        self,
+        cv_id: int,
+        name: str,
+        sections: list[Section | dict],
+        profile: dict[str, str] | None = None,
+        keywords: str | None = None,
+    ) -> CV:
         """Update a CV snapshot while retaining its identity and creation date."""
         if not name.strip() or not sections:
             raise ValueError("A CV needs a name and at least one section")
         snapshot = [self._section_snapshot(section) for section in sections]
         with self._connect() as db:
-            current = db.execute("SELECT name, sections_json, profile_json FROM cvs WHERE id=?", (cv_id,)).fetchone()
+            current = db.execute(
+                "SELECT name, sections_json, profile_json, keywords FROM cvs WHERE id=?", (cv_id,)
+            ).fetchone()
             if not current:
                 raise ValueError("CV not found")
             saved_profile = json.loads(current["profile_json"] or "{}")
             profile_snapshot = DEFAULT_PROFILE | (profile if profile is not None else saved_profile)
+            saved_keywords = current["keywords"] if keywords is None else keywords.strip()
             changed = (
                 name.strip() != current["name"]
                 or snapshot != json.loads(current["sections_json"])
                 or profile_snapshot != (DEFAULT_PROFILE | saved_profile)
+                or saved_keywords != current["keywords"]
             )
             db.execute(
-                "UPDATE cvs SET name=?, sections_json=?, profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
-                (name.strip(), json.dumps(snapshot), json.dumps(profile_snapshot), cv_id),
+                "UPDATE cvs SET name=?, sections_json=?, profile_json=?, keywords=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                (name.strip(), json.dumps(snapshot), json.dumps(profile_snapshot), saved_keywords, cv_id),
             )
             if changed:
                 self._record_cv_history(db, cv_id, "edited")

@@ -24,10 +24,10 @@ Use **Export full backup** in Personal Details to create a portable JSON copy of
 
 1. Update **Personal Details** once. These details are copied into each new CV.
 2. Build reusable blocks in **Section Library**.
-3. Create a tailored CV by selecting and ordering the blocks. Add comma-separated job labels to library sections to note where each block fits; labels help with selection and are not exported. Contact details are snapshotted, while library-sourced sections stay linked to their reusable content.
+3. Create a tailored CV by selecting and ordering the blocks. Add comma-separated section keywords to library sections to note where each block fits; keywords help with selection and are not exported. Contact details are snapshotted, while library-sourced sections stay linked to their reusable content.
 4. Track the application and link it to the exact CV sent.
 
-Saved CVs can be edited from **Tailored CVs**. Editing starts with the saved section content and order, lets you tailor wording without changing the reusable library, add current library sections, and regenerate the Markdown and PDF. Editing a section's wording inside a CV detaches that block from future library updates. The CV keeps its original contact-detail snapshot.
+Saved CVs can be edited from **Tailored CVs**. Add job keywords such as `backend, Python, platform engineering` to record which roles each version best suits; these appear in the CV list and details but not in the exported résumé. Editing starts with the saved section content and order, lets you tailor wording without changing the reusable library, add current library sections, and regenerate the Markdown and PDF. Editing a section's wording inside a CV detaches that block from future library updates. The CV keeps its original contact-detail snapshot.
 
 Use **Tree View** when you want to customize the whole saved snapshot in one place. The CV is the root; personal details and sections sit beneath it; and each section owns its entry lines and bullet points. Reordering whole sections changes only that CV and preserves their library links. Edit freely, then choose **Save & export**. For each linked section whose title, category, or content changed, the save flow asks you to **Create section copy**—adding a reusable `CV name | section name` copy to Section Library and linking this CV to it—or **Edit shared section (updates N CVs)** to update the original and every CV that still links to it. **Cancel** stops the save and keeps your unsaved tree edits in place.
 

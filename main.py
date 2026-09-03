@@ -313,7 +313,7 @@ class SectionDialog(QDialog):
         self.labels.setPlaceholderText("e.g. backend, data engineering, fintech")
         form.addRow("Section title", self.title); form.addRow("Category", self.category)
         if show_labels:
-            form.addRow("Job labels (optional)", self.labels)
+            form.addRow("Section keywords (optional)", self.labels)
         layout.addLayout(form)
         self.content = QPlainTextEdit(section.content if section else "")
         self.content.setPlaceholderText("Example:\n**Data Engineering Intern** :: *May 2026 - Present*\n*Example Company* :: *Montreal, QC*\n- Built reliable data pipelines...\n- Improved reporting...")
@@ -413,7 +413,10 @@ class CVDialog(QDialog):
             if cv else f"This CV will copy {profile['name']}'s current details. Selected library sections remain linked until you edit them."
         )
         outer.addWidget(title(self.windowTitle(), explanation))
-        form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name); outer.addLayout(form)
+        form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name)
+        self.keywords = QLineEdit(cv.keywords if cv else "")
+        self.keywords.setPlaceholderText("e.g. backend, Python, platform engineering")
+        form.addRow("Job keywords", self.keywords); outer.addLayout(form)
         body = QHBoxLayout(); outer.addLayout(body, 1)
         self.available = QListWidget(); self.available.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         for section in sections:
@@ -551,9 +554,9 @@ class MainWindow(QMainWindow):
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
         header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library sections update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
-        self.cv_table = self.table(["Name", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
+        self.cv_table = self.table(["Name", "Job keywords", "Created", "Sections", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
-            ("identity", "Snapshot"), ("contact", "Contact details"), ("sections", "Section order"),
+            ("identity", "Snapshot"), ("keywords", "Best suited for"), ("contact", "Contact details"), ("sections", "Section order"),
             ("applications", "Linked applications"), ("exports", "Export files"),
         ])
         layout.addWidget(cv_card)
@@ -570,7 +573,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header)
 
         self.cv_tree = QTreeWidget()
-        self.cv_tree.setColumnCount(4); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Job labels", "Library link"])
+        self.cv_tree.setColumnCount(4); self.cv_tree.setHeaderLabels(["Node", "Value / category", "Section keywords", "Library link"])
         self.cv_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.cv_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.cv_tree.setWordWrap(True)
@@ -601,7 +604,7 @@ class MainWindow(QMainWindow):
             button = QPushButton(text) if primary else secondary_button(text)
             button.clicked.connect(action); actions.addWidget(button)
         actions.addStretch(); layout.addLayout(actions)
-        hint = QLabel("Double-click a value to edit it. When you save changes to linked section content, choose whether to create a section copy or update every linked CV. Job labels are read-only.")
+        hint = QLabel("Double-click a value to edit it. When you save changes to linked section content, choose whether to create a section copy or update every linked CV. Section keywords are read-only here.")
         hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
         return page
 
@@ -955,7 +958,7 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout(); header.addWidget(title("Section library", "Edit reusable sections here. Changes update CVs that still use the linked section.")); header.addStretch(); importer = secondary_button("Import CV…"); add = secondary_button("New section"); self.section_preview_button = secondary_button("Show Markdown"); save = QPushButton("Save changes"); delete = secondary_button("Delete"); delete.setProperty("danger", True); importer.clicked.connect(self.import_existing_cv); add.clicked.connect(self.new_section); self.section_preview_button.clicked.connect(self.toggle_section_preview); save.clicked.connect(self.save_library_section); delete.clicked.connect(self.delete_section); header.addWidget(importer); header.addWidget(add); header.addWidget(self.section_preview_button); header.addWidget(save); header.addWidget(delete); layout.addLayout(header)
         self.section_tree = QTreeWidget()
         self.section_tree.setColumnCount(5)
-        self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Job labels", "Words"])
+        self.section_tree.setHeaderLabels(["Library name / node", "CV heading / value", "Category", "Section keywords", "Words"])
         self.section_tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.section_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.section_tree.setIndentation(24); self.section_tree.setAnimated(True)
@@ -980,7 +983,7 @@ class MainWindow(QMainWindow):
         self.section_editor_internal_name = QLineEdit(); self.section_editor_internal_name.setPlaceholderText("Library name")
         self.section_editor_title = QLineEdit(); self.section_editor_title.setPlaceholderText("CV heading")
         self.section_editor_category = QComboBox(); self.section_editor_category.addItems(["Profile", "Experience", "Skills", "Education", "Projects", "Other"]); self.section_editor_category.setEditable(True)
-        self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Job labels")
+        self.section_editor_labels = QLineEdit(); self.section_editor_labels.setPlaceholderText("Section keywords")
         self.section_editor_internal_name.setReadOnly(True); self.section_editor_title.setReadOnly(True); self.section_editor_category.setEnabled(False); self.section_editor_labels.setReadOnly(True)
         fields.addWidget(self.section_editor_internal_name, 2); fields.addWidget(self.section_editor_title, 2); fields.addWidget(self.section_editor_category, 1); fields.addWidget(self.section_editor_labels, 2)
         editor_layout.addLayout(fields)
@@ -1105,7 +1108,7 @@ class MainWindow(QMainWindow):
         self.fill_table(self.recent_table, applications[:8], lambda a: [a.company, a.role, a.application_date, a.status])
         self._applications = applications; self._cvs = cvs; self.refresh_applications()
         cv_names = {cv.id: cv.name for cv in cvs}
-        self.fill_table(self.cv_table, cvs, lambda cv: [cv.name, cv.created_at[:10], len(cv.sections), "Ready" if cv.pdf_path else "Not exported"])
+        self.fill_table(self.cv_table, cvs, lambda cv: [cv.name, cv.keywords or "—", cv.created_at[:10], len(cv.sections), "Ready" if cv.pdf_path else "Not exported"])
         self.refresh_tree_picker(cvs)
         self.fill_section_tree(sections)
         profile = self.db.get_profile()
@@ -1163,6 +1166,7 @@ class MainWindow(QMainWindow):
             DEFAULT_PROFILE | snapshot.get("profile", {}),
             None,
             None,
+            snapshot.get("keywords", ""),
         )
 
     def open_cv_history_pdf(self, entry: CVHistory) -> None:
@@ -1273,13 +1277,14 @@ class MainWindow(QMainWindow):
         cv_id = self.selected_id(self.cv_table)
         cv = self.db.get_cv(cv_id) if cv_id else None
         if not cv:
-            values = {"identity": "Select a CV to inspect its saved snapshot.", "contact": "—", "sections": "—", "applications": "—", "exports": "—"}
+            values = {"identity": "Select a CV to inspect its saved snapshot.", "keywords": "—", "contact": "—", "sections": "—", "applications": "—", "exports": "—"}
         else:
             contact = " · ".join(value for value in (cv.profile.get("phone"), cv.profile.get("email"), cv.profile.get("github"), cv.profile.get("website")) if value)
             linked = [f"{item.role} at {item.company}" for item in self.db.list_applications() if item.cv_id == cv.id]
             exports = " · ".join(path for path in (cv.markdown_path, cv.pdf_path) if path)
             values = {
                 "identity": f"{cv.name} · created {cv.created_at.replace('T', ' ')} · {cv.profile.get('name', '')}",
+                "keywords": cv.keywords or "No job keywords saved",
                 "contact": contact or "No contact details saved",
                 "sections": " → ".join(section.get("title", "Untitled") for section in cv.sections),
                 "applications": ", ".join(linked) if linked else "Not linked to an application",
@@ -1552,7 +1557,10 @@ class MainWindow(QMainWindow):
         if not sections: QMessageBox.information(self, "Add content first", "Create at least one reusable section before building a CV."); return
         profile = self.db.get_profile(); dialog = CVDialog(sections, profile, parent=self)
         if dialog.exec():
-            cv = self.db.create_cv(dialog.name.text().strip(), dialog.chosen_sections(), profile)
+            cv = self.db.create_cv(
+                dialog.name.text().strip(), dialog.chosen_sections(), profile,
+                keywords=dialog.keywords.text(),
+            )
             try:
                 markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
                 self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
@@ -1567,7 +1575,10 @@ class MainWindow(QMainWindow):
         dialog = CVDialog(self.db.list_sections(), cv.profile, cv=cv, parent=self)
         if not dialog.exec():
             return
-        updated = self.db.update_cv(cv.id, dialog.name.text().strip(), dialog.chosen_sections(), cv.profile)
+        updated = self.db.update_cv(
+            cv.id, dialog.name.text().strip(), dialog.chosen_sections(), cv.profile,
+            keywords=dialog.keywords.text(),
+        )
         try:
             markdown_path, pdf_path = export_cv(updated, self.data_dir / "exports")
             self.db.update_cv_exports(updated.id, markdown_path, pdf_path)

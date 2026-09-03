@@ -247,6 +247,20 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(updated.profile["name"], "Original Person")
         self.assertIsNone(updated.markdown_path)
         self.assertIsNone(updated.pdf_path)
+
+    def test_cv_job_keywords_are_saved_edited_and_recorded_in_history(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv(
+            "Backend CV", [self.db.get_section(section_id)], keywords="backend, Python"
+        )
+
+        updated = self.db.update_cv(
+            cv.id, cv.name, cv.sections, cv.profile, keywords="platform, distributed systems"
+        )
+
+        self.assertEqual(updated.keywords, "platform, distributed systems")
+        self.assertEqual(self.db.list_cv_history(cv.id)[0].snapshot["keywords"], "platform, distributed systems")
+        self.assertEqual(self.db.backup_data()["cvs"][0]["keywords"], "platform, distributed systems")
     def test_application_lifecycle_and_counts(self):
         application_id = self.db.create_application(company="Acme", role="Designer", location="Toronto", application_date="2026-08-22", status="Applied", cv_id=None, notes="Sent", posting_url="example.com/job")
         self.assertEqual(self.db.status_counts(), {"Applied": 1})
@@ -301,6 +315,7 @@ class DatabaseTests(unittest.TestCase):
                 """)
         migrated = CVDatabase(legacy_path)
         self.assertEqual(migrated.get_cv(1).profile["name"], "")
+        self.assertEqual(migrated.get_cv(1).keywords, "")
         self.assertEqual(migrated.get_application(1).posting_url, "")
         self.assertEqual(migrated.get_application(1).capture_event_id, "")
         self.assertEqual(migrated.get_application(1).posting_snapshot_json, "")
