@@ -74,6 +74,33 @@ class DatabaseTests(unittest.TestCase):
         self.assertNotIn("pdf_path", history[0].snapshot)
         self.assertEqual(history[1].snapshot["name"], "Original")
 
+    def test_autosaved_section_edits_become_one_version_when_committed(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
+
+        affected = self.db.update_section(
+            section_id, "Skills", "Skills", "Python and SQL", record_history=False
+        )
+        self.db.update_section(
+            section_id, "Technical Skills", "Skills", "Python and SQL", record_history=False
+        )
+
+        self.assertEqual(affected, [cv.id])
+        self.assertEqual(len(self.db.list_section_history(section_id)), 1)
+        self.assertEqual(len(self.db.list_cv_history(cv.id)), 1)
+
+        self.assertTrue(self.db.record_section_version(section_id))
+        self.assertTrue(self.db.record_cv_version(cv.id, "linked_section_updated"))
+        self.assertFalse(self.db.record_section_version(section_id))
+        self.assertFalse(self.db.record_cv_version(cv.id, "linked_section_updated"))
+
+        section_history = self.db.list_section_history(section_id)
+        cv_history = self.db.list_cv_history(cv.id)
+        self.assertEqual([entry.version for entry in section_history], [2, 1])
+        self.assertEqual(section_history[0].snapshot["title"], "Technical Skills")
+        self.assertEqual([entry.version for entry in cv_history], [2, 1])
+        self.assertEqual(cv_history[0].snapshot["sections"][0]["content"], "Python and SQL")
+
     def test_deleting_an_item_removes_only_its_history(self):
         first_section_id = self.db.create_section("First", "Skills", "Python")
         second_section_id = self.db.create_section("Second", "Skills", "SQL")

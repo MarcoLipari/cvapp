@@ -226,11 +226,25 @@ class CVDatabase:
         return datetime.now().isoformat(timespec="seconds")
 
     @classmethod
-    def _record_section_history(cls, db: sqlite3.Connection, section_id: int, change_type: str) -> None:
+    def _record_section_history(
+        cls,
+        db: sqlite3.Connection,
+        section_id: int,
+        change_type: str,
+        *,
+        only_if_changed: bool = False,
+    ) -> bool:
         row = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
         if not row:
-            return
+            return False
         snapshot = asdict(cls._section(row))
+        if only_if_changed:
+            latest = db.execute(
+                "SELECT snapshot_json FROM section_history WHERE section_id=? ORDER BY version DESC LIMIT 1",
+                (section_id,),
+            ).fetchone()
+            if latest and json.loads(latest["snapshot_json"]) == snapshot:
+                return False
         version = db.execute(
             "SELECT COALESCE(MAX(version), 0) + 1 FROM section_history WHERE section_id=?",
             (section_id,),
@@ -240,12 +254,20 @@ class CVDatabase:
             "VALUES (?, ?, ?, ?, ?)",
             (section_id, version, cls._history_timestamp(), change_type, json.dumps(snapshot)),
         )
+        return True
 
     @classmethod
-    def _record_cv_history(cls, db: sqlite3.Connection, cv_id: int, change_type: str) -> None:
+    def _record_cv_history(
+        cls,
+        db: sqlite3.Connection,
+        cv_id: int,
+        change_type: str,
+        *,
+        only_if_changed: bool = False,
+    ) -> bool:
         row = db.execute("SELECT * FROM cvs WHERE id=?", (cv_id,)).fetchone()
         if not row:
-            return
+            return False
         cv = cls._cv(row)
         snapshot = {
             "id": cv.id,
@@ -255,6 +277,13 @@ class CVDatabase:
             "profile": cv.profile,
             "keywords": cv.keywords,
         }
+        if only_if_changed:
+            latest = db.execute(
+                "SELECT snapshot_json FROM cv_history WHERE cv_id=? ORDER BY version DESC LIMIT 1",
+                (cv_id,),
+            ).fetchone()
+            if latest and json.loads(latest["snapshot_json"]) == snapshot:
+                return False
         version = db.execute(
             "SELECT COALESCE(MAX(version), 0) + 1 FROM cv_history WHERE cv_id=?",
             (cv_id,),
@@ -264,6 +293,19 @@ class CVDatabase:
             "VALUES (?, ?, ?, ?, ?)",
             (cv_id, version, cls._history_timestamp(), change_type, json.dumps(snapshot)),
         )
+        return True
+
+    def record_section_version(self, section_id: int, change_type: str = "edited") -> bool:
+        """Record the current section after an autosaved editing session."""
+        with self._connect() as db:
+            return self._record_section_history(
+                db, section_id, change_type, only_if_changed=True
+            )
+
+    def record_cv_version(self, cv_id: int, change_type: str = "edited") -> bool:
+        """Record the current CV after an autosaved editing session."""
+        with self._connect() as db:
+            return self._record_cv_history(db, cv_id, change_type, only_if_changed=True)
 
     @classmethod
     def _backfill_history(cls, db: sqlite3.Connection) -> None:
@@ -351,6 +393,7 @@ class CVDatabase:
         labels: str,
         internal_name: str | None = None,
         skip_cv_id: int | None = None,
+        record_history: bool = True,
     ) -> list[int]:
         previous = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
         if not previous:
@@ -362,7 +405,7 @@ class CVDatabase:
             "UPDATE sections SET title=?, category=?, content=?, labels=?, internal_name=? WHERE id=?",
             (title, category, content, labels, saved_internal_name, section_id),
         )
-        if any(value != previous[key] for key, value in (
+        if record_history and any(value != previous[key] for key, value in (
             ("title", title), ("category", category), ("content", content), ("labels", labels),
             ("internal_name", saved_internal_name),
         )):
@@ -397,7 +440,8 @@ class CVDatabase:
                     "UPDATE cvs SET sections_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
                     (json.dumps(sections), row["id"]),
                 )
-                cls._record_cv_history(db, row["id"], "linked_section_updated")
+                if record_history:
+                    cls._record_cv_history(db, row["id"], "linked_section_updated")
                 affected_cv_ids.append(row["id"])
         return affected_cv_ids
 
@@ -409,9 +453,20 @@ class CVDatabase:
         content: str,
         labels: str = "",
         internal_name: str | None = None,
+        *,
+        record_history: bool = True,
     ) -> list[int]:
         with self._connect() as db:
-            return self._update_section(db, section_id, title, category, content, labels, internal_name)
+            return self._update_section(
+                db,
+                section_id,
+                title,
+                category,
+                content,
+                labels,
+                internal_name,
+                record_history=record_history,
+            )
 
     def count_linked_cvs(self, section_id: int) -> int:
         """Count CVs that would receive a shared edit to this section."""

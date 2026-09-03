@@ -1,6 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
 
-from database import CVHistory
+from PySide6.QtWidgets import QTreeWidgetItem
+
+from database import CVDatabase, CVHistory
 from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE
 
 
@@ -124,6 +128,33 @@ class CVTreeTests(unittest.TestCase):
         self.assertIs(owner, section)
         self.assertEqual(owner.data(0, TREE_KIND_ROLE), "section")
         self.assertEqual(owner.data(0, TREE_DATA_ROLE), 42)
+
+    def test_library_edit_is_autosaved_before_a_section_is_duplicated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = CVDatabase(Path(directory) / "test.sqlite3")
+            section_id = db.create_section(
+                "Skills", "Skills", "Python", "backend", internal_name="Core skills"
+            )
+            section = QTreeWidgetItem(["Core skills", "Skills", "Skills", "backend", "2"])
+            section.setData(0, TREE_KIND_ROLE, "section")
+            section.setData(0, TREE_DATA_ROLE, section_id)
+            section.addChild(MainWindow.tree_item("content", "Line", "Python and SQL"))
+
+            helper = type("LibraryHelper", (), {})()
+            helper.db = db
+            helper.section_tree = type("Tree", (), {"currentItem": lambda self: section})()
+            helper.library_section_item = MainWindow.library_section_item
+            helper.section_item_content = MainWindow.section_item_content
+            helper._dirty_section_ids = set()
+            helper._autosaved_linked_cv_ids = set()
+            helper.statusBar = lambda: type("Status", (), {"showMessage": lambda *args: None})()
+
+            self.assertTrue(MainWindow.autosave_library_section(helper, section))
+            duplicate_id = db.duplicate_section(section_id)
+
+            self.assertEqual(db.get_section(section_id).content, "Python and SQL")
+            self.assertEqual(db.get_section(duplicate_id).content, "Python and SQL")
+            self.assertEqual(len(db.list_section_history(section_id)), 1)
 
     def test_cv_history_snapshot_can_be_exported_without_becoming_current(self):
         entry = CVHistory(

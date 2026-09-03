@@ -496,6 +496,13 @@ class MainWindow(QMainWindow):
         self.db = CVDatabase(self.data_dir / "cv_manager.sqlite3")
         self.safari_bridge = SafariBridgeStore(self.db)
         self.safari_bridge_error = ""
+        self._current_page_index = -1
+        self._changing_page = False
+        self._loading_cv_tree = False
+        self._tree_cv_id = None
+        self._tree_dirty = False
+        self._dirty_section_ids: set[int] = set()
+        self._autosaved_linked_cv_ids: set[int] = set()
 
         self.nav = QListWidget(); self.nav.setFixedWidth(205)
         self.nav.addItems(["Overview", "Applications", "CVs", "Tree View", "Section Library", "Personal Details", "Safari Integration"])
@@ -504,12 +511,49 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         for page in (self.overview_page(), self.applications_page(), self.cvs_page(), self.tree_page(), self.sections_page(), self.profile_page(), self.capture_page()):
             self.pages.addWidget(page)
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self.change_page)
         shell = QWidget(); layout = QHBoxLayout(shell); layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(18); layout.addWidget(nav_panel); layout.addWidget(self.pages, 1); self.setCentralWidget(shell)
         refresh = QAction("Refresh", self); refresh.setShortcut("Cmd+R"); refresh.triggered.connect(self.refresh_all); self.menuBar().addAction(refresh)
         self.safari_timer = QTimer(self); self.safari_timer.timeout.connect(self.poll_safari_bridge); self.safari_timer.start(1000)
         self.nav.setCurrentRow(0); self.refresh_all(); self.poll_safari_bridge()
         QTimer.singleShot(0, self.prompt_for_initial_profile)
+
+    def change_page(self, index: int) -> None:
+        """Commit an editor session before displaying another navigation page."""
+        if self._changing_page:
+            return
+        previous = self._current_page_index
+        self.commit_active_editor(previous)
+        changed = False
+        if previous == 3 and index != previous and self._tree_dirty:
+            if not self.save_cv_tree(self._tree_cv_id, refresh=False):
+                self._changing_page = True
+                self.nav.setCurrentRow(previous)
+                self._changing_page = False
+                return
+            changed = True
+        if previous == 4 and index != previous and self._dirty_section_ids:
+            self.commit_library_edits()
+            changed = True
+        self._current_page_index = index
+        self.pages.setCurrentIndex(index)
+        if changed:
+            self.refresh_all()
+
+    def commit_active_editor(self, page_index: int) -> None:
+        tree = self.cv_tree if page_index == 3 else self.section_tree if page_index == 4 else None
+        focused = QApplication.focusWidget()
+        if tree and focused and tree.isAncestorOf(focused):
+            focused.clearFocus()
+
+    def closeEvent(self, event) -> None:
+        self.commit_active_editor(self._current_page_index)
+        if self._tree_dirty and not self.save_cv_tree(self._tree_cv_id, refresh=False):
+            event.ignore()
+            return
+        if self._dirty_section_ids:
+            self.commit_library_edits()
+        event.accept()
 
     def card(self, caption: str) -> QLabel:
         card = QLabel(caption); card.setProperty("card", True); card.setMinimumHeight(86); card.setAlignment(Qt.AlignmentFlag.AlignCenter); card.setStyleSheet("font-size: 15px; font-weight: 600; padding: 8px;")
@@ -568,7 +612,7 @@ class MainWindow(QMainWindow):
         header.addWidget(title("CV tree", "Edit a CV by section, entry, and bullet point."))
         header.addStretch()
         self.tree_cv_picker = QComboBox(); self.tree_cv_picker.setMinimumWidth(240)
-        self.tree_cv_picker.currentIndexChanged.connect(self.load_cv_tree)
+        self.tree_cv_picker.currentIndexChanged.connect(self.change_tree_cv)
         header.addWidget(QLabel("CV")); header.addWidget(self.tree_cv_picker)
         layout.addLayout(header)
 
@@ -579,6 +623,7 @@ class MainWindow(QMainWindow):
         self.cv_tree.setWordWrap(True)
         self.cv_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.cv_tree.setItemDelegate(TreeEditDelegate(self.cv_tree))
+        self.cv_tree.itemChanged.connect(self.mark_cv_tree_dirty)
         self.cv_tree.header().setStretchLastSection(False)
         self.cv_tree.header().setSectionResizeMode(0, self.cv_tree.header().ResizeMode.ResizeToContents)
         self.cv_tree.header().setSectionResizeMode(1, self.cv_tree.header().ResizeMode.Stretch)
@@ -682,6 +727,8 @@ class MainWindow(QMainWindow):
     def refresh_tree_picker(self, cvs: list) -> None:
         if not hasattr(self, "tree_cv_picker"):
             return
+        if self._tree_dirty:
+            return
         selected_id = self.tree_cv_picker.currentData()
         self.tree_cv_picker.blockSignals(True); self.tree_cv_picker.clear()
         if cvs:
@@ -694,15 +741,33 @@ class MainWindow(QMainWindow):
         self.tree_cv_picker.blockSignals(False)
         self.load_cv_tree()
 
+    def change_tree_cv(self, _index: int = -1) -> None:
+        selected_id = self.tree_cv_picker.currentData()
+        if self._tree_dirty and self._tree_cv_id and selected_id != self._tree_cv_id:
+            if not self.save_cv_tree(self._tree_cv_id, refresh=False):
+                self.tree_cv_picker.blockSignals(True)
+                self.tree_cv_picker.setCurrentIndex(
+                    self.tree_cv_picker.findData(self._tree_cv_id)
+                )
+                self.tree_cv_picker.blockSignals(False)
+                return
+        self.load_cv_tree()
+
     def load_cv_tree(self) -> None:
         if not hasattr(self, "cv_tree"):
             return
+        self._loading_cv_tree = True
+        self.cv_tree.blockSignals(True)
         self.cv_tree.clear()
         cv_id = self.tree_cv_picker.currentData()
         cv = self.db.get_cv(cv_id) if cv_id else None
         if not cv:
             placeholder = self.tree_item("placeholder", "Build a CV to customize it here", editable=False)
             self.cv_tree.addTopLevelItem(placeholder)
+            self._tree_cv_id = None
+            self._tree_dirty = False
+            self.cv_tree.blockSignals(False)
+            self._loading_cv_tree = False
             return
 
         root = self.tree_item("cv", "CV", cv.name)
@@ -729,6 +794,14 @@ class MainWindow(QMainWindow):
         for index in range(root.childCount()):
             root.child(index).setExpanded(True)
         self.cv_tree.resizeColumnToContents(0); self.cv_tree.setCurrentItem(root)
+        self._tree_cv_id = cv.id
+        self._tree_dirty = False
+        self.cv_tree.blockSignals(False)
+        self._loading_cv_tree = False
+
+    def mark_cv_tree_dirty(self, *_args) -> None:
+        if not self._loading_cv_tree:
+            self._tree_dirty = True
 
     def prompt_tree_section_action(self, section_item: QTreeWidgetItem) -> bool:
         """Choose how a changed linked section should be saved."""
@@ -815,6 +888,7 @@ class MainWindow(QMainWindow):
         entry.setExpanded(True)
         section.addChild(entry)
         root.addChild(section); root.setExpanded(True); section.setExpanded(True)
+        self._tree_dirty = True
         self.cv_tree.setCurrentItem(section); self.cv_tree.editItem(section, 0)
 
     def add_tree_entry(self) -> None:
@@ -826,6 +900,7 @@ class MainWindow(QMainWindow):
             return
         entry = self.tree_item("entry", "Entry", "New entry")
         item.addChild(entry); item.setExpanded(True); entry.setExpanded(True); self.cv_tree.setCurrentItem(entry); self.cv_tree.editItem(entry, 1)
+        self._tree_dirty = True
 
     def add_tree_details(self) -> None:
         item = self.cv_tree.currentItem()
@@ -836,6 +911,7 @@ class MainWindow(QMainWindow):
             return
         details = self.tree_item("details", "Organization / location", "*Organization* :: *Location*")
         item.insertChild(0, details); item.setExpanded(True); self.cv_tree.setCurrentItem(details); self.cv_tree.editItem(details, 1)
+        self._tree_dirty = True
 
     def add_tree_content(self, line: str) -> None:
         item = self.cv_tree.currentItem()
@@ -850,6 +926,7 @@ class MainWindow(QMainWindow):
             return
         content = self.tree_item("content", self.content_node_label(line), line)
         parent.addChild(content); parent.setExpanded(True); self.cv_tree.setCurrentItem(content); self.cv_tree.editItem(content, 1)
+        self._tree_dirty = True
 
     def remove_tree_node(self) -> None:
         item = self.cv_tree.currentItem()
@@ -858,6 +935,7 @@ class MainWindow(QMainWindow):
             return
         parent = item.parent()
         parent.takeChild(parent.indexOfChild(item))
+        self._tree_dirty = True
 
     def move_tree_node(self, offset: int) -> None:
         item = self.cv_tree.currentItem()
@@ -866,6 +944,7 @@ class MainWindow(QMainWindow):
         parent = item.parent(); row = parent.indexOfChild(item); target = row + offset
         if 0 <= target < parent.childCount() and parent.child(target).data(0, TREE_KIND_ROLE) == item.data(0, TREE_KIND_ROLE):
             parent.takeChild(row); parent.insertChild(target, item); self.cv_tree.setCurrentItem(item)
+            self._tree_dirty = True
 
     def tree_values(self) -> tuple[str, list[dict], dict[str, str]]:
         root = self.cv_tree.topLevelItem(0)
@@ -905,17 +984,17 @@ class MainWindow(QMainWindow):
             section_index += 1
         return actions
 
-    def save_cv_tree(self) -> None:
-        cv_id = self.tree_cv_picker.currentData()
+    def save_cv_tree(self, cv_id: int | None = None, *, refresh: bool = True) -> bool:
+        cv_id = cv_id or self._tree_cv_id or self.tree_cv_picker.currentData()
         if not cv_id:
             QMessageBox.information(self, "No CV selected", "Build or select a CV before saving.")
-            return
+            return False
         name, sections, profile = self.tree_values()
         if not name or not sections or any(not section["title"] or not section["content"] for section in sections):
             QMessageBox.warning(self, "Incomplete CV", "A CV needs a name and at least one titled section with content.")
-            return
+            return False
         if not self.resolve_tree_section_actions():
-            return
+            return False
         name, sections, profile = self.tree_values()
         try:
             updated, affected_cv_ids, created_section_ids = self.db.update_cv_from_tree(
@@ -923,7 +1002,7 @@ class MainWindow(QMainWindow):
             )
         except ValueError as error:
             QMessageBox.warning(self, "CV not saved", str(error))
-            return
+            return False
 
         failed_exports = []
         export_ids = list(dict.fromkeys([updated.id, *affected_cv_ids]))
@@ -951,7 +1030,12 @@ class MainWindow(QMainWindow):
                 "Your changes were saved, but these exports need attention:\n\n" + "\n".join(failed_exports),
             )
             message = "Changes saved, but some exports need attention."
-        self.refresh_all(); self.statusBar().showMessage(message, 6000)
+        self._tree_dirty = False
+        self._tree_cv_id = updated.id
+        if refresh:
+            self.refresh_all()
+        self.statusBar().showMessage(message, 6000)
+        return True
 
     def sections_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
@@ -977,6 +1061,7 @@ class MainWindow(QMainWindow):
         self.section_tree.customContextMenuRequested.connect(self.show_section_context_menu)
         self.section_tree.itemSelectionChanged.connect(self.refresh_section_details)
         self.section_tree.itemChanged.connect(self.refresh_section_preview)
+        self.section_tree.itemChanged.connect(self.autosave_library_section)
         self.section_tree.header().setStretchLastSection(False)
         self.section_tree.header().setSectionResizeMode(0, self.section_tree.header().ResizeMode.ResizeToContents)
         self.section_tree.header().setSectionResizeMode(1, self.section_tree.header().ResizeMode.Stretch)
@@ -1051,6 +1136,7 @@ class MainWindow(QMainWindow):
         filter_index = self.section_heading_filter.findData(selected_heading)
         self.section_heading_filter.setCurrentIndex(filter_index if filter_index >= 0 else 0)
         self.section_heading_filter.blockSignals(False)
+        self.section_tree.blockSignals(True)
         self.section_tree.clear()
         selected_item = None
         for section in sections:
@@ -1076,6 +1162,7 @@ class MainWindow(QMainWindow):
         self.section_tree.resizeColumnToContents(4)
         if selected_item:
             self.section_tree.setCurrentItem(selected_item)
+        self.section_tree.blockSignals(False)
         self.apply_section_heading_filter()
 
     def apply_section_heading_filter(self, _index: int | None = None) -> None:
@@ -1134,6 +1221,7 @@ class MainWindow(QMainWindow):
                     detail.setForeground(1, muted)
 
     def refresh_all(self) -> None:
+        self.commit_active_editor(self._current_page_index)
         applications, cvs, sections, counts = self.db.list_applications(), self.db.list_cvs(), self.db.list_sections(), self.db.status_counts()
         for status, card in self.status_cards.items():
             card.setText(f"<span style='font-size:25px; color:#1d4ed8'>{counts.get(status, 0)}</span><br><span style='color:#64748b'>{status}</span>")
@@ -1238,6 +1326,10 @@ class MainWindow(QMainWindow):
         menu.exec(self.section_tree.viewport().mapToGlobal(position))
 
     def duplicate_library_section(self, section_id: int) -> None:
+        current = self.library_section_item(self.section_tree.currentItem())
+        if current and current.data(0, TREE_DATA_ROLE) == section_id:
+            if not self.autosave_library_section(current):
+                return
         try:
             duplicate_id = self.db.duplicate_section(section_id)
         except ValueError:
@@ -1445,7 +1537,87 @@ class MainWindow(QMainWindow):
         if not internal_name or not title or not content:
             QMessageBox.warning(self, "Incomplete section", "A section needs an internal name, CV heading, and content.")
             return
-        self.update_library_section(item.data(0, TREE_DATA_ROLE), internal_name, title, category, content, labels)
+        if self.autosave_library_section(item):
+            self.commit_library_edits()
+            self.refresh_all()
+
+    def autosave_library_section(
+        self,
+        changed_item: QTreeWidgetItem | None = None,
+        _column: int = 0,
+    ) -> bool:
+        """Persist one inline edit without creating a history entry per edit."""
+        item = self.library_section_item(changed_item or self.section_tree.currentItem())
+        if not item:
+            return True
+        section_id = item.data(0, TREE_DATA_ROLE)
+        saved = self.db.get_section(section_id)
+        if not saved:
+            return False
+        internal_name = item.text(0).strip()
+        title = item.text(1).strip()
+        category = item.text(2).strip() or "Other"
+        labels = item.text(3).strip()
+        if labels == "—":
+            labels = ""
+        content = self.section_item_content(item)
+        values = (title, category, content, labels, internal_name)
+        current = (saved.title, saved.category, saved.content, saved.labels, saved.internal_name)
+        if values == current:
+            return True
+        if not internal_name or not title or not content:
+            self.statusBar().showMessage(
+                "Autosave paused: a section needs a library name, CV heading, and content.", 6000
+            )
+            return False
+        try:
+            affected_cv_ids = self.db.update_section(
+                section_id,
+                title,
+                category,
+                content,
+                labels,
+                internal_name,
+                record_history=False,
+            )
+        except ValueError as error:
+            self.statusBar().showMessage(f"Autosave paused: {error}", 6000)
+            return False
+        self._dirty_section_ids.add(section_id)
+        self._autosaved_linked_cv_ids.update(affected_cv_ids)
+        self.statusBar().showMessage("Section changes autosaved.", 2500)
+        return True
+
+    def commit_library_edits(self) -> None:
+        """Turn autosaved library edits into one version when the page is exited."""
+        section_ids = set(self._dirty_section_ids)
+        affected_cv_ids = set(self._autosaved_linked_cv_ids)
+        self._dirty_section_ids.clear()
+        self._autosaved_linked_cv_ids.clear()
+        for section_id in section_ids:
+            self.db.record_section_version(section_id)
+        for cv_id in affected_cv_ids:
+            self.db.record_cv_version(cv_id, "linked_section_updated")
+
+        failed_exports = []
+        for cv_id in affected_cv_ids:
+            cv = self.db.get_cv(cv_id)
+            if not cv:
+                continue
+            try:
+                markdown_path, pdf_path = export_cv(cv, self.data_dir / "exports")
+                self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
+            except Exception as error:
+                failed_exports.append(f"{cv.name}: {error}")
+        if failed_exports:
+            QMessageBox.warning(
+                self,
+                "Sections saved, some exports failed",
+                "The section versions were saved, but these exports need attention:\n\n"
+                + "\n".join(failed_exports),
+            )
+        elif section_ids:
+            self.statusBar().showMessage("Saved Section Library version.", 6000)
 
     def update_library_section(
         self,
