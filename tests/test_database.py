@@ -41,6 +41,68 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(duplicate.internal_name, "Core skills (copy)")
         self.assertEqual(self.db.list_section_history(duplicate_id)[0].change_type, "created")
 
+    def test_split_section_creates_adjacent_entries_and_preserves_linked_cvs(self):
+        first_content = "**Data Engineer** :: *2025 - Present*\n- Built pipelines."
+        second_content = "**Developer** :: *2023 - 2025*\n- Shipped features."
+        section_id = self.db.create_section(
+            "Experience",
+            "Experience",
+            f"{first_content}\n{second_content}",
+            "backend, data",
+            internal_name="Engineering experience",
+        )
+        following_id = self.db.create_section("Skills", "Skills", "Python")
+        linked_cv = self.db.create_cv("Linked", [self.db.get_section(section_id)])
+        tailored_cv = self.db.create_cv("Tailored", [{
+            "title": "Experience",
+            "category": "Experience",
+            "content": "Custom role",
+        }])
+        self.db.update_cv_exports(linked_cv.id, "old.md", "old.pdf")
+
+        new_section_id, affected_cv_ids = self.db.split_section(
+            section_id,
+            first_content,
+            second_content,
+            "Developer",
+        )
+
+        sections = self.db.list_sections()
+        self.assertEqual([section.id for section in sections], [section_id, new_section_id, following_id])
+        original = self.db.get_section(section_id)
+        split = self.db.get_section(new_section_id)
+        self.assertEqual(original.content, first_content)
+        self.assertEqual(original.internal_name, "Engineering experience")
+        self.assertEqual(split.content, second_content)
+        self.assertEqual(split.internal_name, "Developer")
+        self.assertEqual(split.title, original.title)
+        self.assertEqual(split.category, original.category)
+        self.assertEqual(split.labels, original.labels)
+        self.assertEqual(affected_cv_ids, [linked_cv.id])
+        saved_cv = self.db.get_cv(linked_cv.id)
+        self.assertEqual(
+            [section["source_section_id"] for section in saved_cv.sections],
+            [section_id, new_section_id],
+        )
+        self.assertEqual(
+            [section["content"] for section in saved_cv.sections],
+            [first_content, second_content],
+        )
+        self.assertIsNone(saved_cv.markdown_path)
+        self.assertIsNone(saved_cv.pdf_path)
+        self.assertEqual(self.db.get_cv(tailored_cv.id).sections[0]["content"], "Custom role")
+        self.assertEqual(self.db.list_section_history(section_id)[0].change_type, "split")
+        self.assertEqual(self.db.list_section_history(new_section_id)[0].change_type, "created")
+        self.assertEqual(self.db.list_cv_history(linked_cv.id)[0].change_type, "linked_section_split")
+
+    def test_split_section_is_atomic_when_the_source_is_missing(self):
+        existing_id = self.db.create_section("Skills", "Skills", "Python")
+
+        with self.assertRaisesRegex(ValueError, "Section not found"):
+            self.db.split_section(999, "First", "Second", "Second entry")
+
+        self.assertEqual([section.id for section in self.db.list_sections()], [existing_id])
+
     def test_section_and_linked_cv_changes_create_independent_history(self):
         section_id = self.db.create_section("Skills", "Skills", "Python", "backend")
         cv = self.db.create_cv("Target role", [self.db.get_section(section_id)])
@@ -193,6 +255,49 @@ class DatabaseTests(unittest.TestCase):
         )
         self.assertEqual(self.db.get_cv(current.id).sections[0]["source_section_id"], copied_id)
         self.assertEqual(self.db.get_cv(current.id).sections[0]["title"], "Skills")
+
+    def test_tree_cv_specific_entry_can_be_moved_to_linked_entries(self):
+        cv = self.db.create_cv("Acme role", [{
+            "title": "Experience",
+            "category": "Experience",
+            "content": "**Engineer** :: *2024 - Present*\n- Built systems.",
+        }])
+
+        updated, affected_cv_ids, created_section_ids = self.db.update_cv_from_tree(
+            cv.id,
+            cv.name,
+            cv.sections,
+            cv.profile,
+            {0: "link"},
+        )
+
+        self.assertEqual(affected_cv_ids, [])
+        self.assertEqual(len(created_section_ids), 1)
+        linked_id = created_section_ids[0]
+        linked = self.db.get_section(linked_id)
+        self.assertEqual(linked.internal_name, "Acme role | Experience")
+        self.assertEqual(linked.title, "Experience")
+        self.assertEqual(linked.category, "Experience")
+        self.assertEqual(linked.content, cv.sections[0]["content"])
+        self.assertEqual(linked.labels, "")
+        self.assertEqual(updated.sections[0]["source_section_id"], linked_id)
+        self.assertEqual(self.db.list_section_history(linked_id)[0].change_type, "created")
+
+    def test_tree_link_action_rejects_an_already_linked_entry_atomically(self):
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv("Acme role", [self.db.get_section(section_id)])
+
+        with self.assertRaisesRegex(ValueError, "Only CV-specific entries"):
+            self.db.update_cv_from_tree(
+                cv.id,
+                cv.name,
+                cv.sections,
+                cv.profile,
+                {0: "link"},
+            )
+
+        self.assertEqual([section.id for section in self.db.list_sections()], [section_id])
+        self.assertEqual(self.db.get_cv(cv.id).sections, cv.sections)
 
     def test_tree_shared_edit_updates_every_linked_cv(self):
         section_id = self.db.create_section("Skills", "Skills", "Python", internal_name="Core skills")

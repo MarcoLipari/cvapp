@@ -5,6 +5,7 @@ import csv
 import json
 import logging
 import platform
+import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -788,6 +789,8 @@ class MainWindow(QMainWindow):
         self.cv_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.cv_tree.setItemDelegate(TreeEditDelegate(self.cv_tree))
         self.cv_tree.itemChanged.connect(self.mark_cv_tree_dirty)
+        self.cv_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cv_tree.customContextMenuRequested.connect(self.show_tree_context_menu)
         self.cv_tree.header().setStretchLastSection(False)
         self.cv_tree.header().setSectionResizeMode(0, self.cv_tree.header().ResizeMode.ResizeToContents)
         self.cv_tree.header().setSectionResizeMode(1, self.cv_tree.header().ResizeMode.Stretch)
@@ -813,7 +816,7 @@ class MainWindow(QMainWindow):
             button = QPushButton(text) if primary else secondary_button(text)
             button.clicked.connect(action); actions.addWidget(button)
         actions.addStretch(); layout.addLayout(actions)
-        hint = QLabel("Double-click a value to edit it. When you save changes to linked entry content, choose whether to create an entry copy or update every linked CV. Entry keywords are read-only here.")
+        hint = QLabel("Double-click a value to edit it. Right-click a CV-specific entry to move it to linked entries. When you save changes to linked entry content, choose whether to create an entry copy or update every linked CV. Entry keywords are read-only here.")
         hint.setProperty("muted", True); hint.setWordWrap(True); layout.addWidget(hint)
         return page
 
@@ -967,6 +970,44 @@ class MainWindow(QMainWindow):
         if not self._loading_cv_tree:
             self._tree_dirty = True
 
+    @staticmethod
+    def cv_tree_section_item(item: QTreeWidgetItem | None) -> QTreeWidgetItem | None:
+        """Return the CV section that owns a selected tree row."""
+        while item and item.data(0, TREE_KIND_ROLE) not in {"section", "cv"}:
+            item = item.parent()
+        return item if item and item.data(0, TREE_KIND_ROLE) == "section" else None
+
+    def show_tree_context_menu(self, position) -> None:
+        item = self.cv_tree.itemAt(position)
+        section_item = self.cv_tree_section_item(item)
+        if not section_item:
+            return
+        original = section_item.data(0, TREE_DATA_ROLE) or {}
+        source_section_id = original.get("source_section_id")
+        source = self.db.get_section(source_section_id) if source_section_id is not None else None
+        if source or section_item.data(0, TREE_EDIT_MODE_ROLE) == "link":
+            return
+        self.cv_tree.setCurrentItem(section_item)
+        menu = QMenu(self)
+        link = menu.addAction("Move to linked entries")
+        link.triggered.connect(lambda: self.move_tree_section_to_linked(section_item))
+        menu.exec(self.cv_tree.viewport().mapToGlobal(position))
+
+    def move_tree_section_to_linked(self, section_item: QTreeWidgetItem) -> None:
+        """Mark a CV-specific section for creation in and linkage to the library."""
+        original = section_item.data(0, TREE_DATA_ROLE) or {}
+        source_section_id = original.get("source_section_id")
+        if source_section_id is not None and self.db.get_section(source_section_id):
+            return
+        root = self.cv_tree.topLevelItem(0)
+        cv_name = root.text(1).strip() if root else "CV"
+        internal_name = f"{cv_name} | {section_item.text(0).strip()}"
+        section_item.setData(0, TREE_EDIT_MODE_ROLE, "link")
+        section_item.setText(3, f"Will link on save · {internal_name}")
+        self.cv_tree.setCurrentItem(section_item)
+        self._tree_dirty = True
+        self.statusBar().showMessage("This entry will move to linked entries when the CV is saved.", 5000)
+
     def prompt_tree_section_action(self, section_item: QTreeWidgetItem) -> bool:
         """Choose how a changed linked section should be saved."""
         original = section_item.data(0, TREE_DATA_ROLE) or {}
@@ -1015,6 +1056,8 @@ class MainWindow(QMainWindow):
                 continue
             original = item.data(0, TREE_DATA_ROLE) or {}
             source_section_id = original.get("source_section_id")
+            if item.data(0, TREE_EDIT_MODE_ROLE) == "link":
+                continue
             if source_section_id is None:
                 continue
             changed = any((
@@ -1126,7 +1169,7 @@ class MainWindow(QMainWindow):
                 section = {"title": item.text(0).strip(), "category": item.text(1).strip() or "Other", "content": content}
                 original = item.data(0, TREE_DATA_ROLE) or {}
                 edit_mode = item.data(0, TREE_EDIT_MODE_ROLE)
-                if original.get("source_section_id") is not None and (
+                if original.get("source_section_id") is not None and edit_mode != "link" and (
                     edit_mode in {"copy", "shared"}
                     or all(section[key] == original.get(key, "") for key in ("title", "category", "content"))
                 ):
@@ -1187,8 +1230,8 @@ class MainWindow(QMainWindow):
 
         copy_summary = ""
         if created_section_ids:
-            noun = "copy" if len(created_section_ids) == 1 else "copies"
-            copy_summary = f" Created {len(created_section_ids)} section {noun}."
+            noun = "entry" if len(created_section_ids) == 1 else "entries"
+            copy_summary = f" Created {len(created_section_ids)} linked library {noun}."
         other_cv_count = len(set(affected_cv_ids) - {updated.id})
         shared_summary = f" Updated {other_cv_count} other linked CV(s)." if other_cv_count else ""
         message = f"Saved and exported CV: {updated.name}.{copy_summary}{shared_summary}"
@@ -1504,6 +1547,9 @@ class MainWindow(QMainWindow):
         kind = item.data(0, TREE_KIND_ROLE)
         if insertion or is_bullet_item(item):
             menu.addSeparator()
+        if self.library_entry_split_point(item):
+            split = menu.addAction("Split into separate entries")
+            split.triggered.connect(lambda: self.split_library_entry(item))
         if kind in {"entry", "details", "content"}:
             delete_labels = {
                 "entry": "Delete sub-entry",
@@ -1528,6 +1574,94 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, selected=entry: self.preview_section_history(selected)
             )
         menu.exec(self.section_tree.viewport().mapToGlobal(position))
+
+    @staticmethod
+    def library_entry_split_point(
+        item: QTreeWidgetItem | None,
+    ) -> tuple[QTreeWidgetItem, int] | None:
+        """Return the section and child boundary selected by a split action."""
+        if not item:
+            return None
+        kind = item.data(0, TREE_KIND_ROLE)
+        section_item = item if kind == "section" else item.parent() if kind == "entry" else None
+        if not section_item:
+            return None
+        entries = [
+            section_item.child(index)
+            for index in range(section_item.childCount())
+            if section_item.child(index).data(0, TREE_KIND_ROLE) == "entry"
+        ]
+        if len(entries) < 2 or len(entries) != section_item.childCount():
+            return None
+        if kind == "section" or item is entries[0]:
+            return section_item, section_item.indexOfChild(entries[1])
+        return section_item, section_item.indexOfChild(item)
+
+    @staticmethod
+    def section_content_between(
+        section_item: QTreeWidgetItem,
+        start: int,
+        end: int,
+    ) -> str:
+        """Serialize a contiguous range of a library entry's child rows."""
+        lines = []
+        for child_index in range(start, end):
+            child = section_item.child(child_index)
+            lines.append(child.text(1))
+            if child.data(0, TREE_KIND_ROLE) == "entry":
+                lines.extend(child.child(index).text(1) for index in range(child.childCount()))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def split_entry_internal_name(entry_text: str, fallback: str) -> str:
+        """Turn a Markdown entry heading into a useful library name."""
+        heading = entry_text.split(" :: ", 1)[0]
+        heading = re.sub(r"\[([^]]+)]\([^)]+\)", r"\1", heading)
+        heading = heading.replace("**", "").replace("*", "").replace("_", "").strip()
+        return heading or f"{fallback} (split)"
+
+    def split_library_entry(self, item: QTreeWidgetItem) -> None:
+        """Split a multi-entry library item at the selected sub-entry boundary."""
+        split_point = self.library_entry_split_point(item)
+        if not split_point:
+            return
+        section_item, boundary = split_point
+        first_content = self.section_content_between(section_item, 0, boundary)
+        second_content = self.section_content_between(section_item, boundary, section_item.childCount())
+        second_entry = section_item.child(boundary)
+        second_name = self.split_entry_internal_name(second_entry.text(1), section_item.text(0))
+        if QMessageBox.question(
+            self,
+            "Split reusable entry",
+            f"Split this into two reusable entries at “{second_name}”? "
+            "Linked CVs will keep both entries in the same order.",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        if not self.autosave_library_section(section_item):
+            return
+        section_id = section_item.data(0, TREE_DATA_ROLE)
+        try:
+            new_section_id, affected_cv_ids = self.db.split_section(
+                section_id,
+                first_content,
+                second_content,
+                second_name,
+                record_history=False,
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "Entry not split", str(error))
+            return
+        self._dirty_section_ids.add(section_id)
+        self._autosaved_linked_cv_ids.update(affected_cv_ids)
+        self.refresh_all()
+        for index in range(self.section_tree.topLevelItemCount()):
+            candidate = self.section_tree.topLevelItem(index)
+            if candidate.data(0, TREE_DATA_ROLE) == new_section_id:
+                self.section_tree.setCurrentItem(candidate)
+                break
+        self.statusBar().showMessage(
+            "Created a separate reusable entry; linked CVs still contain both in order.", 6000
+        )
 
     def library_bullet_insertion_point(
         self, item: QTreeWidgetItem | None

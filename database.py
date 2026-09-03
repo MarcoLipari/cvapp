@@ -382,6 +382,84 @@ class CVDatabase:
             internal_name=f"{section.internal_name} (copy)",
         )
 
+    def split_section(
+        self,
+        section_id: int,
+        first_content: str,
+        second_content: str,
+        second_internal_name: str,
+        *,
+        record_history: bool = True,
+    ) -> tuple[int, list[int]]:
+        """Split one reusable entry while preserving linked CV content and order."""
+        first_content = first_content.strip()
+        second_content = second_content.strip()
+        second_internal_name = second_internal_name.strip()
+        if not first_content or not second_content:
+            raise ValueError("Both split entries need content")
+        if not second_internal_name:
+            raise ValueError("The new entry needs an internal name")
+
+        affected_cv_ids: list[int] = []
+        with self._connect() as db:
+            source = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
+            if not source:
+                raise ValueError("Section not found")
+
+            db.execute("UPDATE sections SET sort_order=sort_order+1 WHERE sort_order>?", (source["sort_order"],))
+            db.execute("UPDATE sections SET content=? WHERE id=?", (first_content, section_id))
+            new_section_id = db.execute(
+                "INSERT INTO sections(title, category, content, sort_order, labels, internal_name) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    source["title"], source["category"], second_content,
+                    source["sort_order"] + 1, source["labels"], second_internal_name,
+                ),
+            ).lastrowid
+
+            if record_history:
+                self._record_section_history(db, section_id, "split")
+            self._record_section_history(db, new_section_id, "created")
+
+            for row in db.execute("SELECT id, sections_json FROM cvs").fetchall():
+                sections = json.loads(row["sections_json"])
+                updated_sections = []
+                changed = False
+                for section in sections:
+                    linked = section.get("source_section_id") == section_id
+                    legacy_match = "source_section_id" not in section and all(
+                        section.get(key, "") == source[key]
+                        for key in ("title", "category", "content")
+                    )
+                    if not (linked or legacy_match):
+                        updated_sections.append(section)
+                        continue
+                    updated_sections.extend([
+                        {
+                            "title": source["title"],
+                            "category": source["category"],
+                            "content": first_content,
+                            "source_section_id": section_id,
+                        },
+                        {
+                            "title": source["title"],
+                            "category": source["category"],
+                            "content": second_content,
+                            "source_section_id": new_section_id,
+                        },
+                    ])
+                    changed = True
+                if changed:
+                    db.execute(
+                        "UPDATE cvs SET sections_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                        (json.dumps(updated_sections), row["id"]),
+                    )
+                    if record_history:
+                        self._record_cv_history(db, row["id"], "linked_section_split")
+                    affected_cv_ids.append(row["id"])
+
+        return new_section_id, affected_cv_ids
+
     @classmethod
     def _update_section(
         cls,
@@ -601,9 +679,10 @@ class CVDatabase:
         """Apply Tree View section choices and save the CV in one transaction.
 
         Section actions are keyed by the section's position in ``sections`` and
-        may be ``copy`` or ``shared``. Copy actions create a reusable library
-        section and link only this CV to it. Shared actions update the existing
-        source section and every other linked CV.
+        may be ``link``, ``copy``, or ``shared``. Link actions add CV-specific
+        content to the reusable library. Copy actions create a reusable copy and
+        link only this CV to it. Shared actions update the existing source
+        section and every other linked CV.
         """
         saved_name = name.strip()
         if not saved_name or not sections:
@@ -622,6 +701,23 @@ class CVDatabase:
                     raise ValueError("Unknown CV section")
                 section = snapshot[section_index]
                 source_section_id = section.get("source_section_id")
+                if action == "link":
+                    if source_section_id is not None:
+                        raise ValueError("Only CV-specific entries can be moved to linked entries")
+                    order = db.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM sections").fetchone()[0]
+                    internal_name = f"{saved_name} | {section['title']}"
+                    linked_section_id = db.execute(
+                        "INSERT INTO sections(title, category, content, sort_order, labels, internal_name) "
+                        "VALUES (?, ?, ?, ?, '', ?)",
+                        (
+                            section["title"], section["category"], section["content"],
+                            order, internal_name,
+                        ),
+                    ).lastrowid
+                    self._record_section_history(db, linked_section_id, "created")
+                    section["source_section_id"] = linked_section_id
+                    created_section_ids.append(linked_section_id)
+                    continue
                 if source_section_id is None:
                     raise ValueError("Only linked sections can be copied or edited as shared")
                 source = db.execute("SELECT * FROM sections WHERE id=?", (source_section_id,)).fetchone()

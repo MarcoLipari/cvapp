@@ -181,6 +181,73 @@ class CVTreeTests(unittest.TestCase):
         self.assertEqual(MainWindow.section_item_content(section), "Python and Rust")
         self.assertIsNone(section.data(0, TREE_EDIT_MODE_ROLE))
 
+    def test_cv_specific_link_action_is_preserved_in_tree_values(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section",
+            "Experience",
+            "Experience",
+            {"title": "Experience", "category": "Experience", "content": "Developer"},
+        )
+        section.setData(0, TREE_EDIT_MODE_ROLE, "link")
+        section.addChild(MainWindow.tree_item("entry", "Entry", "Developer"))
+        root.addChild(section)
+
+        _, sections, _ = MainWindow.tree_values(helper)
+
+        self.assertEqual(sections, [{
+            "title": "Experience",
+            "category": "Experience",
+            "content": "Developer",
+        }])
+
+    def test_cv_specific_link_action_needs_no_shared_entry_prompt(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section",
+            "Experience",
+            "Experience",
+            {"title": "Experience", "category": "Experience", "content": "Developer"},
+        )
+        section.setData(0, TREE_EDIT_MODE_ROLE, "link")
+        section.addChild(MainWindow.tree_item("entry", "Entry", "Developer"))
+        root.addChild(section)
+        helper.prompt_tree_section_action = lambda _item: self.fail("Linking should not prompt")
+
+        self.assertTrue(MainWindow.resolve_tree_section_actions(helper))
+        self.assertEqual(section.data(0, TREE_EDIT_MODE_ROLE), "link")
+
+    def test_link_action_drops_a_missing_legacy_source_before_save(self):
+        helper = self.tree_helper()
+        root = MainWindow.tree_item("cv", "CV", "Test CV")
+        helper.cv_tree = type("Tree", (), {"topLevelItem": lambda self, index: root})()
+        section = MainWindow.tree_item(
+            "section",
+            "Skills",
+            "Skills",
+            {"title": "Skills", "category": "Skills", "content": "Python", "source_section_id": 99},
+        )
+        section.setData(0, TREE_EDIT_MODE_ROLE, "link")
+        section.addChild(MainWindow.tree_item("content", "Line", "Python"))
+        root.addChild(section)
+
+        _, sections, _ = MainWindow.tree_values(helper)
+
+        self.assertNotIn("source_section_id", sections[0])
+
+    def test_cv_tree_nested_row_resolves_to_owning_section(self):
+        section = MainWindow.tree_item("section", "Experience", "Experience")
+        entry = MainWindow.tree_item("entry", "Entry", "Developer")
+        bullet = MainWindow.tree_item("content", "Bullet", "- Built systems")
+        section.addChild(entry)
+        entry.addChild(bullet)
+
+        self.assertIs(MainWindow.cv_tree_section_item(bullet), section)
+
     def test_library_child_resolves_to_owning_section(self):
         section = MainWindow.tree_item("section", "Experience", "Experience", 42)
         entry = MainWindow.tree_item("entry", "Entry", "Developer")
@@ -253,6 +320,55 @@ class CVTreeTests(unittest.TestCase):
 
         self.assertEqual(section.childCount(), 1)
         self.assertEqual(section.child(0).text(1), "Project B")
+
+    def test_library_entry_split_uses_clicked_sub_entry_as_boundary(self):
+        section = MainWindow.tree_item("section", "Experience history", "Experience", 42)
+        first = MainWindow.tree_item("entry", "Entry", "**Data Engineer** :: *2025 - Present*")
+        first.addChild(MainWindow.tree_item("content", "Bullet", "- Built pipelines."))
+        second = MainWindow.tree_item("entry", "Entry", "**Developer** :: *2023 - 2025*")
+        second.addChild(MainWindow.tree_item("content", "Bullet", "- Shipped features."))
+        third = MainWindow.tree_item("entry", "Entry", "**Analyst** :: *2022 - 2023*")
+        third.addChild(MainWindow.tree_item("content", "Bullet", "- Analyzed data."))
+        section.addChildren([first, second, third])
+
+        split_section, boundary = MainWindow.library_entry_split_point(second)
+
+        self.assertIs(split_section, section)
+        self.assertEqual(boundary, 1)
+        self.assertEqual(
+            MainWindow.section_content_between(section, 0, boundary),
+            "**Data Engineer** :: *2025 - Present*\n- Built pipelines.",
+        )
+        self.assertEqual(
+            MainWindow.section_content_between(section, boundary, section.childCount()),
+            "**Developer** :: *2023 - 2025*\n- Shipped features.\n"
+            "**Analyst** :: *2022 - 2023*\n- Analyzed data.",
+        )
+
+    def test_library_entry_split_from_parent_or_first_entry_keeps_first_entry_first(self):
+        section = MainWindow.tree_item("section", "Experience history", "Experience", 42)
+        first = MainWindow.tree_item("entry", "Entry", "First")
+        second = MainWindow.tree_item("entry", "Entry", "Second")
+        section.addChildren([first, second])
+
+        self.assertEqual(MainWindow.library_entry_split_point(section), (section, 1))
+        self.assertEqual(MainWindow.library_entry_split_point(first), (section, 1))
+
+    def test_library_entry_split_requires_multiple_sub_entries(self):
+        section = MainWindow.tree_item("section", "Project", "Projects", 42)
+        only = MainWindow.tree_item("entry", "Entry", "Only project")
+        section.addChild(only)
+
+        self.assertIsNone(MainWindow.library_entry_split_point(section))
+        self.assertIsNone(MainWindow.library_entry_split_point(only))
+
+    def test_split_entry_internal_name_removes_markdown_and_date(self):
+        name = MainWindow.split_entry_internal_name(
+            "**[Software Engineer](https://example.com)** :: *2024 - Present*",
+            "Experience",
+        )
+
+        self.assertEqual(name, "Software Engineer")
 
     def test_library_edit_is_autosaved_before_a_section_is_duplicated(self):
         with tempfile.TemporaryDirectory() as directory:
