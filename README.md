@@ -8,13 +8,22 @@ The initial production target is **macOS 13 Ventura or newer on Apple silicon**.
 
 CV Manager stores its database, exports, backups, bridge files, and diagnostic logs locally on the Mac. On first launch, it asks for the personal details to use in new CVs; the source code contains no prefilled personal profile.
 
-## Run
+## Install and run
+
+From the project directory, create a virtual environment and install the pinned dependency:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+Then start the desktop app:
 
 ```bash
 .venv/bin/python main.py
 ```
 
-Your database and exports are stored in the macOS Application Support directory for CV Manager.
+The app creates its local database and export folders on first launch. Use **Open data folder** in Personal Details to open their location in the macOS Application Support directory for CV Manager.
 
 Diagnostic logs are stored in the app's `logs` folder under Application Support. Logs rotate automatically and retain up to five previous 1 MB files.
 
@@ -82,3 +91,11 @@ Open **Safari Integration** in CV Manager to see the shared catalog and queued-r
 The web resources live in [`safari-extension`](safari-extension), and the native Swift message handler and entitlements live in [`safari-native`](safari-native). Full Xcode is required to convert and package the extension. Follow [`safari-native/README.md`](safari-native/README.md) once Xcode is installed.
 
 The extension never sends CVs or job details to a CV Manager service. Native messages only read the shared CV catalog or append an application request to local App Group storage.
+
+## Tests
+
+Run the complete test suite from the project directory:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
