@@ -363,12 +363,40 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertEqual(self.db.get_cv(cv.id).sections[0]["content"], "Tailored Python")
 
-    def test_cv_snapshots_current_profile(self):
-        self.db.update_profile({"name": "Test Person", "phone": "1", "email": "test@example.com", "github": "example.com/a", "website": "example.com"})
+    def test_profile_updates_current_cvs_without_changing_past_snapshots(self):
+        original_profile = {
+            "name": "Test Person",
+            "phone": "1",
+            "email": "test@example.com",
+            "github": "example.com/a",
+            "linkedin": "linkedin.com/in/test",
+            "website": "example.com",
+        }
+        self.db.update_profile(original_profile)
         section_id = self.db.create_section("Skills", "Skills", "Python")
         cv = self.db.create_cv("Role", [self.db.get_section(section_id)])
-        self.db.update_profile({"name": "Changed Person", "phone": "2", "email": "changed@example.com", "github": "example.com/b", "website": "changed.example"})
-        self.assertIn("# TEST PERSON", render_markdown(self.db.get_cv(cv.id)))
+        self.db.update_cv_exports(cv.id, "old.md", "old.pdf")
+
+        updated_profile = {
+            "name": "Changed Person",
+            "phone": "2",
+            "email": "changed@example.com",
+            "github": "example.com/b",
+            "linkedin": "linkedin.com/in/changed",
+            "website": "changed.example",
+        }
+        self.db.update_profile(updated_profile)
+
+        updated = self.db.get_cv(cv.id)
+        history = self.db.list_cv_history(cv.id)
+        self.assertEqual(updated.profile, updated_profile)
+        self.assertIn("# CHANGED PERSON", render_markdown(updated))
+        self.assertIsNone(updated.markdown_path)
+        self.assertIsNone(updated.pdf_path)
+        self.assertEqual([entry.version for entry in history], [2, 1])
+        self.assertEqual(history[0].change_type, "profile_updated")
+        self.assertEqual(history[0].snapshot["profile"], updated_profile)
+        self.assertEqual(history[1].snapshot["profile"], original_profile)
 
     def test_cv_can_be_edited_without_losing_identity_or_profile_snapshot(self):
         self.db.update_profile({"name": "Original Person", "phone": "1", "email": "original@example.com", "github": "", "website": ""})

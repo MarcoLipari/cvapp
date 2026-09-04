@@ -336,12 +336,28 @@ class CVDatabase:
         return bool(profile["name"].strip() and profile["email"].strip())
 
     def update_profile(self, profile: dict[str, str]) -> None:
+        """Update personal details on the profile and every current CV.
+
+        Existing CV history rows remain unchanged, while each affected CV gets
+        a new current history version and must be exported again.
+        """
         values = {key: str(profile.get(key, "")).strip() for key in DEFAULT_PROFILE}
         with self._connect() as db:
             db.executemany(
                 "INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 [(f"profile.{key}", value) for key, value in values.items()],
             )
+            profile_json = json.dumps(values)
+            cvs = db.execute("SELECT id, profile_json FROM cvs").fetchall()
+            for cv in cvs:
+                saved_profile = DEFAULT_PROFILE | json.loads(cv["profile_json"] or "{}")
+                if saved_profile == values:
+                    continue
+                db.execute(
+                    "UPDATE cvs SET profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                    (profile_json, cv["id"]),
+                )
+                self._record_cv_history(db, cv["id"], "profile_updated")
 
     def list_sections(self) -> list[Section]:
         with self._connect() as db:

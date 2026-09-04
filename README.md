@@ -31,7 +31,7 @@ Use **Export full backup** in Personal Details to create a portable JSON copy of
 
 ## CV workflow
 
-1. Update **Personal Details** once. These details are copied into each new CV.
+1. Update **Personal Details** once. Changes apply to every current CV and to new CVs, while past CV history keeps its original details.
 2. Build reusable entries in **Entry Library**. Give each one a descriptive library name, such as `Payments migration`, then choose an existing CV section such as `Projects` from the dropdown—or type a new section name.
 3. Create a tailored CV by selecting and ordering those entries. Put entries with the same CV section next to each other and they are exported together under one heading, so projects, roles, and other content can be mixed and matched independently. Add comma-separated entry keywords to note where each entry fits; keywords help with selection and are not exported. Contact details are snapshotted, while library entries stay linked to their reusable content.
 4. Track the application and link it to the exact CV sent.

@@ -349,7 +349,7 @@ class ProfileDialog(QDialog):
         subtitle = (
             "Add the contact details to use in new CVs. You can change them later."
             if first_run else
-            "These details are copied into each new CV and do not change afterward."
+            "Changes apply to your current CVs; past CV history remains unchanged."
         )
         layout.addWidget(title(self.windowTitle(), subtitle))
         form = QFormLayout()
@@ -1328,7 +1328,7 @@ class MainWindow(QMainWindow):
 
     def profile_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
-        layout.addWidget(title("Personal details", "Used for new CVs; existing CVs keep the details saved with them."))
+        layout.addWidget(title("Personal details", "Changes apply to all current CVs; past CV history remains unchanged."))
         card = QFrame(); card.setProperty("card", True); form = QFormLayout(card); form.setContentsMargins(22, 22, 22, 22); self.profile_labels = {}
         for key, label in [
             ("name", "Name"),
@@ -1481,6 +1481,7 @@ class MainWindow(QMainWindow):
             "baseline": "History enabled",
             "created": "Created",
             "edited": "Edited",
+            "profile_updated": "Personal details updated",
             "linked_section_updated": "Linked section updated",
         }.get(change_type, change_type.replace("_", " ").title())
 
