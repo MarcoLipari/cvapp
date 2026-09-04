@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from cv_export import CVOverflowError, export_cv, export_stem, pdf_filename, render_markdown
+from cv_document_editor import CVDocumentDialog
 from cv_importer import ImportResult, import_cv
 from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
 from safari_bridge_store import SafariBridgeStore
@@ -359,8 +360,8 @@ class ProfileDialog(QDialog):
             "phone": "Phone",
             "email": "Email",
             "github": "GitHub display URL",
-            "linkedin": "LinkedIn display URL",
             "website": "Website display URL",
+            "linkedin": "LinkedIn display URL",
         }
         for key, label in labels.items():
             field = QLineEdit(profile.get(key, DEFAULT_PROFILE[key])); self.fields[key] = field; form.addRow(label, field)
@@ -769,7 +770,7 @@ class MainWindow(QMainWindow):
 
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library entries update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); edit = secondary_button("Edit CV"); preview = secondary_button("Preview Markdown"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); edit.clicked.connect(self.edit_cv); preview.clicked.connect(self.preview_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, edit, preview, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
+        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library entries update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); document = secondary_button("Document editor"); edit = secondary_button("Edit CV"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); document.clicked.connect(self.edit_cv_document); edit.clicked.connect(self.edit_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, document, edit, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
         self.cv_table = self.table(["Name", "Job keywords", "Created", "Entries", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
             ("identity", "Snapshot"), ("keywords", "Best suited for"), ("contact", "Contact details"), ("sections", "Section order"),
@@ -953,8 +954,8 @@ class MainWindow(QMainWindow):
             "phone": "Phone",
             "email": "Email",
             "github": "GitHub",
-            "linkedin": "LinkedIn",
             "website": "Website",
+            "linkedin": "LinkedIn",
         }
         for key, label in profile_labels.items():
             profile.addChild(self.tree_item("profile_field", label, cv.profile.get(key, ""), key))
@@ -1335,8 +1336,8 @@ class MainWindow(QMainWindow):
             ("phone", "Phone"),
             ("email", "Email"),
             ("github", "GitHub"),
-            ("linkedin", "LinkedIn"),
             ("website", "Website"),
+            ("linkedin", "LinkedIn"),
         ]:
             value = QLabel(); value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); self.profile_labels[key] = value; form.addRow(label, value)
         layout.addWidget(card); actions = QHBoxLayout(); edit = QPushButton("Edit personal details"); backup = secondary_button("Export full backup"); open_data = secondary_button("Open data folder"); edit.clicked.connect(self.edit_profile); backup.clicked.connect(self.export_backup); open_data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.data_dir)))); actions.addWidget(edit); actions.addWidget(backup); actions.addWidget(open_data); actions.addStretch(); layout.addLayout(actions); layout.addStretch()
@@ -1888,8 +1889,8 @@ class MainWindow(QMainWindow):
                     cv.profile.get("phone"),
                     cv.profile.get("email"),
                     cv.profile.get("github"),
-                    cv.profile.get("linkedin"),
                     cv.profile.get("website"),
+                    cv.profile.get("linkedin"),
                 )
                 if value
             )
@@ -2373,6 +2374,48 @@ class MainWindow(QMainWindow):
         except Exception as error:
             QMessageBox.warning(self, "CV updated, export failed", f"The CV snapshot was updated but could not be exported:\n{error}")
         self.refresh_all()
+
+    def edit_cv_document(self) -> None:
+        cv = self.selected_cv()
+        if not cv:
+            return
+        dialog = CVDocumentDialog(cv, self)
+        if not dialog.exec():
+            return
+        updated = self.db.update_cv(
+            cv.id,
+            cv.name,
+            dialog.edited_sections(),
+            cv.profile,
+            keywords=cv.keywords,
+        )
+        published = False
+        try:
+            exported = self.export_cv_with_overflow_warning(
+                updated, self.data_dir / "exports"
+            )
+            if exported is not None:
+                markdown_path, pdf_path = exported
+                self.db.update_cv_exports(updated.id, markdown_path, pdf_path)
+                published = True
+            else:
+                self.statusBar().showMessage(
+                    f'Updated CV; PDF generation cancelled: {updated.name}', 6000
+                )
+        except Exception as error:
+            QMessageBox.warning(
+                self,
+                "CV updated, export failed",
+                f"The document changes were saved but the PDF could not be generated:\n{error}",
+            )
+        self.refresh_all()
+        if published:
+            message = (
+                f'Updated and exported CV: {updated.name}. Safari publishing needs attention.'
+                if self.safari_bridge_error
+                else f'Updated, exported, and published CV: {updated.name}'
+            )
+            self.statusBar().showMessage(message, 6000)
 
     def selected_cv(self):
         cv_id = self.selected_id(self.cv_table)

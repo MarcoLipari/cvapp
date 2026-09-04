@@ -182,8 +182,8 @@ class DatabaseTests(unittest.TestCase):
                 "phone": "",
                 "email": "",
                 "github": "",
-                "linkedin": "",
                 "website": "",
+                "linkedin": "",
             },
         )
         self.assertFalse(self.db.profile_is_configured())
@@ -396,6 +396,42 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual([entry.version for entry in history], [2, 1])
         self.assertEqual(history[0].change_type, "profile_updated")
         self.assertEqual(history[0].snapshot["profile"], updated_profile)
+        self.assertEqual(history[1].snapshot["profile"], original_profile)
+
+    def test_startup_migrates_a_profile_saved_before_cv_propagation(self):
+        original_profile = {
+            "name": "Test Person",
+            "phone": "1",
+            "email": "test@example.com",
+            "github": "example.com/a",
+            "linkedin": "",
+            "website": "example.com",
+        }
+        self.db.update_profile(original_profile)
+        section_id = self.db.create_section("Skills", "Skills", "Python")
+        cv = self.db.create_cv("Role", [self.db.get_section(section_id)])
+        self.db.update_cv_exports(cv.id, "old.md", "old.pdf")
+
+        with closing(sqlite3.connect(self.db.path)) as connection:
+            with connection:
+                connection.execute(
+                    "UPDATE settings SET value=? WHERE key='profile.linkedin'",
+                    ("linkedin.com/in/test",),
+                )
+                connection.execute(
+                    "DELETE FROM settings WHERE key='migration.current_cv_profiles_v1'"
+                )
+
+        migrated = CVDatabase(self.db.path)
+
+        current = migrated.get_cv(cv.id)
+        history = migrated.list_cv_history(cv.id)
+        self.assertEqual(current.profile["linkedin"], "linkedin.com/in/test")
+        self.assertIsNone(current.markdown_path)
+        self.assertIsNone(current.pdf_path)
+        self.assertEqual([entry.version for entry in history], [2, 1])
+        self.assertEqual(history[0].change_type, "profile_updated")
+        self.assertEqual(history[0].snapshot["profile"]["linkedin"], "linkedin.com/in/test")
         self.assertEqual(history[1].snapshot["profile"], original_profile)
 
     def test_cv_can_be_edited_without_losing_identity_or_profile_snapshot(self):

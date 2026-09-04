@@ -4,4 +4,4 @@ version = "0.1.0"
 description = "Local desktop CV and job application manager"
 
 [tool.pyside6-project]
-files = ["main.py"]
+files = ["main.py", "cv_document_editor.py"]

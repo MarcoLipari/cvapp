@@ -14,13 +14,14 @@ from pathlib import Path
 from typing import Iterator
 
 STATUSES = ("Applied", "Interviewing", "Offer", "Rejected", "Withdrawn")
+CURRENT_CV_PROFILE_MIGRATION = "migration.current_cv_profiles_v1"
 DEFAULT_PROFILE = {
     "name": "",
     "phone": "",
     "email": "",
     "github": "",
-    "linkedin": "",
     "website": "",
+    "linkedin": "",
 }
 
 
@@ -184,6 +185,7 @@ class CVDatabase:
                 db.execute("ALTER TABLE sections ADD COLUMN internal_name TEXT NOT NULL DEFAULT ''")
             db.execute("UPDATE sections SET internal_name=title WHERE TRIM(internal_name)='' ")
             self._backfill_history(db)
+            self._migrate_current_cv_profiles(db)
 
     @staticmethod
     def _section(row: sqlite3.Row) -> Section:
@@ -335,6 +337,48 @@ class CVDatabase:
         profile = self.get_profile()
         return bool(profile["name"].strip() and profile["email"].strip())
 
+    @classmethod
+    def _apply_profile_to_current_cvs(
+        cls,
+        db: sqlite3.Connection,
+        profile: dict[str, str],
+    ) -> None:
+        profile_json = json.dumps(profile)
+        cvs = db.execute("SELECT id, profile_json FROM cvs").fetchall()
+        for cv in cvs:
+            saved_profile = DEFAULT_PROFILE | json.loads(cv["profile_json"] or "{}")
+            if saved_profile == profile:
+                continue
+            db.execute(
+                "UPDATE cvs SET profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
+                (profile_json, cv["id"]),
+            )
+            cls._record_cv_history(db, cv["id"], "profile_updated")
+
+    @classmethod
+    def _migrate_current_cv_profiles(cls, db: sqlite3.Connection) -> None:
+        """Apply a profile saved before current-CV propagation was introduced."""
+        migrated = db.execute(
+            "SELECT 1 FROM settings WHERE key=?",
+            (CURRENT_CV_PROFILE_MIGRATION,),
+        ).fetchone()
+        if migrated:
+            return
+        rows = db.execute(
+            "SELECT key, value FROM settings WHERE key LIKE 'profile.%'"
+        ).fetchall()
+        if rows:
+            saved = {row["key"].removeprefix("profile."): row["value"] for row in rows}
+            profile = {
+                key: str(saved.get(key, default)).strip()
+                for key, default in DEFAULT_PROFILE.items()
+            }
+            cls._apply_profile_to_current_cvs(db, profile)
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES (?, '1')",
+            (CURRENT_CV_PROFILE_MIGRATION,),
+        )
+
     def update_profile(self, profile: dict[str, str]) -> None:
         """Update personal details on the profile and every current CV.
 
@@ -347,17 +391,7 @@ class CVDatabase:
                 "INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 [(f"profile.{key}", value) for key, value in values.items()],
             )
-            profile_json = json.dumps(values)
-            cvs = db.execute("SELECT id, profile_json FROM cvs").fetchall()
-            for cv in cvs:
-                saved_profile = DEFAULT_PROFILE | json.loads(cv["profile_json"] or "{}")
-                if saved_profile == values:
-                    continue
-                db.execute(
-                    "UPDATE cvs SET profile_json=?, markdown_path=NULL, pdf_path=NULL WHERE id=?",
-                    (profile_json, cv["id"]),
-                )
-                self._record_cv_history(db, cv["id"], "profile_updated")
+            self._apply_profile_to_current_cvs(db, values)
 
     def list_sections(self) -> list[Section]:
         with self._connect() as db:

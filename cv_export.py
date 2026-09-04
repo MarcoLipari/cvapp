@@ -35,8 +35,8 @@ def render_markdown(cv: CV) -> str:
             profile["phone"],
             profile["email"],
             profile["github"],
-            profile["linkedin"],
             profile["website"],
+            profile["linkedin"],
         )
         if value
     )
@@ -61,6 +61,7 @@ def _inline(text: str) -> str:
     escaped = html.escape(
         re.sub(r"\[([^\]]+)]\((https?://[^)\s]+)\)", stash_link, text)
     )
+    escaped = re.sub(r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>", escaped)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*", r"<i>\1</i>", escaped)
 
@@ -262,7 +263,7 @@ def _draw_reference_layout(
         y += title_metrics.height() + 1.0 * density
 
         contact_items = []
-        for key in ("phone", "email", "github", "linkedin", "website"):
+        for key in ("phone", "email", "github", "website", "linkedin"):
             value = profile[key]
             if value:
                 contact_items.append(

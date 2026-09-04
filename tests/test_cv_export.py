@@ -21,6 +21,9 @@ class CVExportTests(unittest.TestCase):
             '<b><a href="https://example.com/project">Project</a></b>',
         )
 
+    def test_renders_combined_bold_and_italic_text(self):
+        self.assertEqual(_inline("***Emphasis***"), "<b><i>Emphasis</i></b>")
+
     def test_users_can_add_their_own_links(self):
         rendered = _inline("Built [My Project](https://example.com/my-project)")
 
@@ -80,6 +83,11 @@ class CVExportTests(unittest.TestCase):
             },
             markdown_path=None,
             pdf_path=None,
+        )
+
+        self.assertEqual(
+            render_markdown(cv).splitlines()[1],
+            "555-0100 | ada@example.com | github.com/ada | ada.example.com | linkedin.com/in/ada",
         )
 
         with tempfile.TemporaryDirectory() as directory:
