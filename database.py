@@ -19,6 +19,7 @@ DEFAULT_PROFILE = {
     "phone": "",
     "email": "",
     "github": "",
+    "linkedin": "",
     "website": "",
 }
 

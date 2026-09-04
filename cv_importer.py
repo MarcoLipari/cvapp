@@ -205,6 +205,8 @@ def _profile_from_header(lines: list[str]) -> dict[str, str]:
         clean = domain.removeprefix("https://").removeprefix("http://").removeprefix("www.").rstrip(".,")
         if "github.com" in clean.lower():
             profile["github"] = clean
+        elif "linkedin.com" in clean.lower():
+            profile["linkedin"] = clean
         elif "." in clean and "email" not in clean.lower() and "@" not in clean:
             profile.setdefault("website", clean)
     return profile

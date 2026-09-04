@@ -354,7 +354,14 @@ class ProfileDialog(QDialog):
         layout.addWidget(title(self.windowTitle(), subtitle))
         form = QFormLayout()
         self.fields = {}
-        labels = {"name": "Full name", "phone": "Phone", "email": "Email", "github": "GitHub display URL", "website": "Website display URL"}
+        labels = {
+            "name": "Full name",
+            "phone": "Phone",
+            "email": "Email",
+            "github": "GitHub display URL",
+            "linkedin": "LinkedIn display URL",
+            "website": "Website display URL",
+        }
         for key, label in labels.items():
             field = QLineEdit(profile.get(key, DEFAULT_PROFILE[key])); self.fields[key] = field; form.addRow(label, field)
         layout.addLayout(form)
@@ -941,7 +948,14 @@ class MainWindow(QMainWindow):
         self.cv_tree.addTopLevelItem(root)
         profile = self.tree_item("profile", "Personal details", editable=False)
         root.addChild(profile)
-        profile_labels = {"name": "Name", "phone": "Phone", "email": "Email", "github": "GitHub", "website": "Website"}
+        profile_labels = {
+            "name": "Name",
+            "phone": "Phone",
+            "email": "Email",
+            "github": "GitHub",
+            "linkedin": "LinkedIn",
+            "website": "Website",
+        }
         for key, label in profile_labels.items():
             profile.addChild(self.tree_item("profile_field", label, cv.profile.get(key, ""), key))
         library_sections = {section.id: section for section in self.db.list_sections()}
@@ -1316,7 +1330,14 @@ class MainWindow(QMainWindow):
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(16)
         layout.addWidget(title("Personal details", "Used for new CVs; existing CVs keep the details saved with them."))
         card = QFrame(); card.setProperty("card", True); form = QFormLayout(card); form.setContentsMargins(22, 22, 22, 22); self.profile_labels = {}
-        for key, label in [("name", "Name"), ("phone", "Phone"), ("email", "Email"), ("github", "GitHub"), ("website", "Website")]:
+        for key, label in [
+            ("name", "Name"),
+            ("phone", "Phone"),
+            ("email", "Email"),
+            ("github", "GitHub"),
+            ("linkedin", "LinkedIn"),
+            ("website", "Website"),
+        ]:
             value = QLabel(); value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); self.profile_labels[key] = value; form.addRow(label, value)
         layout.addWidget(card); actions = QHBoxLayout(); edit = QPushButton("Edit personal details"); backup = secondary_button("Export full backup"); open_data = secondary_button("Open data folder"); edit.clicked.connect(self.edit_profile); backup.clicked.connect(self.export_backup); open_data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.data_dir)))); actions.addWidget(edit); actions.addWidget(backup); actions.addWidget(open_data); actions.addStretch(); layout.addLayout(actions); layout.addStretch()
         return page
@@ -1860,7 +1881,17 @@ class MainWindow(QMainWindow):
         if not cv:
             values = {"identity": "Select a CV to inspect its saved snapshot.", "keywords": "—", "contact": "—", "sections": "—", "applications": "—", "exports": "—"}
         else:
-            contact = " · ".join(value for value in (cv.profile.get("phone"), cv.profile.get("email"), cv.profile.get("github"), cv.profile.get("website")) if value)
+            contact = " · ".join(
+                value
+                for value in (
+                    cv.profile.get("phone"),
+                    cv.profile.get("email"),
+                    cv.profile.get("github"),
+                    cv.profile.get("linkedin"),
+                    cv.profile.get("website"),
+                )
+                if value
+            )
             linked = [f"{item.role} at {item.company}" for item in self.db.list_applications() if item.cv_id == cv.id]
             exports = " · ".join(path for path in (cv.markdown_path, cv.pdf_path) if path)
             values = {

@@ -7,7 +7,7 @@ from cv_importer import _extract_pdf_links, _restore_pdf_links, parse_cv_text
 
 
 SAMPLE_CV = """ADA LOVELACE
-(555) 010-1234 | ada@example.com | github.com/example-user | portfolio.example.com
+(555) 010-1234 | ada@example.com | github.com/example-user | linkedin.com/in/ada-lovelace | portfolio.example.com
 EDUCATION
 Example University, Toronto, ON                    Sep 2025 - Jun 2028
 B.Sc. Honours Computer Science
@@ -29,6 +29,8 @@ class CVImporterTests(unittest.TestCase):
         self.assertEqual(result.profile["name"], "Ada Lovelace")
         self.assertEqual(result.profile["email"], "ada@example.com")
         self.assertEqual(result.profile["phone"], "(555) 010-1234")
+        self.assertEqual(result.profile["github"], "github.com/example-user")
+        self.assertEqual(result.profile["linkedin"], "linkedin.com/in/ada-lovelace")
         self.assertEqual(result.profile["website"], "portfolio.example.com")
         self.assertEqual([section.category for section in result.sections], ["Education", "Experience", "Skills"])
 

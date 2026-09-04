@@ -75,6 +75,7 @@ class CVExportTests(unittest.TestCase):
                 "phone": "555-0100",
                 "email": "ada@example.com",
                 "github": "github.com/ada",
+                "linkedin": "linkedin.com/in/ada",
                 "website": "ada.example.com",
             },
             markdown_path=None,
@@ -88,6 +89,8 @@ class CVExportTests(unittest.TestCase):
             document = QPdfDocument()
             self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
             text = document.getAllText(0).text()
+
+            self.assertIn("linkedin.com/in/ada", text)
 
             expected_order = [
                 "ADA LOVELACE",

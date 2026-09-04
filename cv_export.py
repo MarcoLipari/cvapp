@@ -29,7 +29,17 @@ def pdf_filename(cv: CV) -> str:
 def render_markdown(cv: CV) -> str:
     """Render a CV snapshot as editable Markdown in the personal CV format."""
     profile = DEFAULT_PROFILE | cv.profile
-    contact = " | ".join(value for value in (profile["phone"], profile["email"], profile["github"], profile["website"]) if value)
+    contact = " | ".join(
+        value
+        for value in (
+            profile["phone"],
+            profile["email"],
+            profile["github"],
+            profile["linkedin"],
+            profile["website"],
+        )
+        if value
+    )
     parts = [f"# {profile['name'].upper()}", contact, ""]
     previous_title = None
     for section in cv.sections:
@@ -252,10 +262,14 @@ def _draw_reference_layout(
         y += title_metrics.height() + 1.0 * density
 
         contact_items = []
-        for key in ("phone", "email", "github", "website"):
+        for key in ("phone", "email", "github", "linkedin", "website"):
             value = profile[key]
             if value:
-                contact_items.append(_link(value) if key in {"github", "website"} else html.escape(value))
+                contact_items.append(
+                    _link(value)
+                    if key in {"github", "linkedin", "website"}
+                    else html.escape(value)
+                )
         contact_doc = document(f'<div align="center">{" | ".join(contact_items)}</div>', 10.0 * density, content_width, body_leading=False)
         y += draw_document(contact_doc, left, y, draw) + 5.0 * density
 

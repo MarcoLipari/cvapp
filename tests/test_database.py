@@ -177,7 +177,14 @@ class DatabaseTests(unittest.TestCase):
     def test_new_profile_is_blank_until_onboarding_is_completed(self):
         self.assertEqual(
             self.db.get_profile(),
-            {"name": "", "phone": "", "email": "", "github": "", "website": ""},
+            {
+                "name": "",
+                "phone": "",
+                "email": "",
+                "github": "",
+                "linkedin": "",
+                "website": "",
+            },
         )
         self.assertFalse(self.db.profile_is_configured())
 
