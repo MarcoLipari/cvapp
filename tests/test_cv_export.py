@@ -84,6 +84,7 @@ class CVExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             _, pdf_path = export_cv(cv, directory)
             self.assertEqual(pdf_path.name, "AdaLovelaceCV.pdf")
+            self.assertEqual(pdf_path.parent.name, "Backend-role-7")
             document = QPdfDocument()
             self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
             text = document.getAllText(0).text()
@@ -105,6 +106,39 @@ class CVExportTests(unittest.TestCase):
             )
             self.assertFalse(document.metaData(QPdfDocument.MetaDataField.Author))
             self.assertFalse(document.metaData(QPdfDocument.MetaDataField.Creator))
+
+    def test_cvs_for_the_same_person_keep_separate_pdf_exports(self):
+        profile = {"name": "Ada Lovelace", "email": "ada@example.com"}
+        backend_cv = CV(
+            id=7,
+            name="Backend role",
+            created_at="2026-08-23T12:00:00",
+            sections=[{"title": "Skills", "category": "Skills", "content": "Python services"}],
+            profile=profile,
+            markdown_path=None,
+            pdf_path=None,
+        )
+        frontend_cv = CV(
+            id=8,
+            name="Frontend role",
+            created_at="2026-08-24T12:00:00",
+            sections=[{"title": "Skills", "category": "Skills", "content": "TypeScript interfaces"}],
+            profile=profile,
+            markdown_path=None,
+            pdf_path=None,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            _, backend_path = export_cv(backend_cv, directory)
+            _, frontend_path = export_cv(frontend_cv, directory)
+
+            self.assertNotEqual(backend_path, frontend_path)
+            self.assertEqual(backend_path.name, "AdaLovelaceCV.pdf")
+            self.assertEqual(frontend_path.name, "AdaLovelaceCV.pdf")
+            backend_document = QPdfDocument()
+            self.assertEqual(backend_document.load(str(backend_path)), QPdfDocument.Error.None_)
+            self.assertIn("Python services", backend_document.getAllText(0).text())
+            self.assertNotIn("TypeScript interfaces", backend_document.getAllText(0).text())
 
     def test_export_rejects_overflow_instead_of_shrinking_reference_sizes(self):
         cv = CV(

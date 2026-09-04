@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from cv_export import CVOverflowError, export_cv, render_markdown
+from cv_export import CVOverflowError, export_cv, export_stem, pdf_filename, render_markdown
 from cv_importer import ImportResult, import_cv
 from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
 from safari_bridge_store import SafariBridgeStore
@@ -1481,6 +1481,8 @@ class MainWindow(QMainWindow):
         history = self.previous_versions(self.db.list_cv_history(cv_id))
 
         menu = QMenu(self)
+        menu.addAction("Open PDF", self.open_selected_pdf)
+        menu.addSeparator()
         history_menu = menu.addMenu("See history")
         if not history:
             empty = history_menu.addAction("No previous versions")
@@ -1508,7 +1510,7 @@ class MainWindow(QMainWindow):
 
     def open_cv_history_pdf(self, entry: CVHistory) -> None:
         version_dir = self.data_dir / "exports" / "history" / f"cv-{entry.cv_id}" / f"version-{entry.version}"
-        pdf_path = next(version_dir.glob("*.pdf"), None) if version_dir.exists() else None
+        pdf_path = next(version_dir.rglob("*.pdf"), None) if version_dir.exists() else None
         try:
             if pdf_path is None:
                 exported = self.export_cv_with_overflow_warning(
@@ -2381,8 +2383,25 @@ class MainWindow(QMainWindow):
 
     def open_selected_pdf(self) -> None:
         cv = self.selected_cv()
-        if cv and cv.pdf_path and Path(cv.pdf_path).exists(): QDesktopServices.openUrl(QUrl.fromLocalFile(cv.pdf_path))
-        elif cv: QMessageBox.information(self, "No PDF found", "The PDF export is not available. Regenerate this CV to create one.")
+        if not cv:
+            return
+        pdf_path = Path(cv.pdf_path) if cv.pdf_path else None
+        expected_path = self.data_dir / "exports" / export_stem(cv) / pdf_filename(cv)
+        if pdf_path and pdf_path.exists() and pdf_path != expected_path:
+            try:
+                exported = self.export_cv_with_overflow_warning(cv, self.data_dir / "exports")
+                if exported is None:
+                    return
+                markdown_path, pdf_path = exported
+                self.db.update_cv_exports(cv.id, markdown_path, pdf_path)
+                self.refresh_all()
+            except Exception as error:
+                QMessageBox.warning(self, "PDF unavailable", f"Could not refresh this CV's PDF:\n{error}")
+                return
+        if pdf_path and pdf_path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(pdf_path)))
+        else:
+            QMessageBox.information(self, "No PDF found", "The PDF export is not available. Regenerate this CV to create one.")
 
     def open_export_folder(self) -> None:
         export_dir = self.data_dir / "exports"; export_dir.mkdir(exist_ok=True); QDesktopServices.openUrl(QUrl.fromLocalFile(str(export_dir)))

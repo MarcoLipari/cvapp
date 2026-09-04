@@ -427,6 +427,46 @@ class CVTreeTests(unittest.TestCase):
 
         self.assertEqual(MainWindow.previous_versions(history), ["previous", "oldest"])
 
+    def test_opening_a_legacy_shared_pdf_regenerates_the_selected_cv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            export_dir = data_dir / "exports"
+            export_dir.mkdir()
+            legacy_path = export_dir / "AdaLovelaceCV.pdf"
+            legacy_path.write_bytes(b"legacy")
+            current_markdown = export_dir / "Backend-role-7.md"
+            current_pdf_dir = export_dir / "Backend-role-7"
+            current_pdf_dir.mkdir()
+            current_pdf = current_pdf_dir / "AdaLovelaceCV.pdf"
+            current_pdf.write_bytes(b"current")
+            cv = CV(
+                id=7,
+                name="Backend role",
+                created_at="2026-08-23T12:00:00",
+                sections=[],
+                profile={"name": "Ada Lovelace"},
+                markdown_path=None,
+                pdf_path=str(legacy_path),
+            )
+            updates = []
+
+            helper = type("OpenPDFHelper", (), {})()
+            helper.data_dir = data_dir
+            helper.selected_cv = lambda: cv
+            helper.export_cv_with_overflow_warning = (
+                lambda selected, output: (current_markdown, current_pdf)
+            )
+            helper.db = type("Database", (), {
+                "update_cv_exports": lambda self, *args: updates.append(args),
+            })()
+            helper.refresh_all = lambda: None
+
+            with patch("main.QDesktopServices.openUrl") as open_url:
+                MainWindow.open_selected_pdf(helper)
+
+            self.assertEqual(updates, [(7, current_markdown, current_pdf)])
+            self.assertEqual(open_url.call_args.args[0].toLocalFile(), str(current_pdf))
+
     def test_section_heading_filter_hides_non_matches_and_clears_hidden_selection(self):
         class Item:
             def __init__(self, heading):

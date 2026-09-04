@@ -13,6 +13,19 @@ class CVOverflowError(ValueError):
     """Raised when a CV needs more than one page at the reference sizes."""
 
 
+def export_stem(cv: CV) -> str:
+    """Return the unique name used to keep one CV's exports together."""
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", cv.name).strip("-") or "cv"
+    return f"{safe_name}-{cv.id}"
+
+
+def pdf_filename(cv: CV) -> str:
+    """Return the professional, user-facing filename for a CV PDF."""
+    profile = DEFAULT_PROFILE | cv.profile
+    person_name = re.sub(r"[^A-Za-z0-9]+", "", profile["name"])
+    return f"{person_name}CV.pdf" if person_name else "CV.pdf"
+
+
 def render_markdown(cv: CV) -> str:
     """Render a CV snapshot as editable Markdown in the personal CV format."""
     profile = DEFAULT_PROFILE | cv.profile
@@ -69,19 +82,17 @@ def export_cv(
 
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
     profile = DEFAULT_PROFILE | cv.profile
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", cv.name).strip("-") or "cv"
-    markdown_stem = f"{safe_name}-{cv.id}"
-    pdf_stem = re.sub(r"[^A-Za-z0-9]+", "", profile["name"]) + "CV"
-    markdown_path = output / f"{markdown_stem}.md"
-    pdf_path = output / f"{pdf_stem}.pdf"
-    pending_pdf_path = output / f".{pdf_stem}.pending.pdf"
+    file_stem = export_stem(cv)
+    markdown_path = output / f"{file_stem}.md"
+    pdf_dir = output / file_stem; pdf_dir.mkdir(exist_ok=True)
+    pdf_path = pdf_dir / pdf_filename(cv)
+    pending_pdf_path = pdf_dir / f".{pdf_path.stem}.pending.pdf"
     markdown = render_markdown(cv); markdown_path.write_text(markdown, encoding="utf-8")
     writer = QPdfWriter(str(pending_pdf_path))
     # Keep the file broadly compatible and make its purpose unambiguous to
     # document-management systems before they inspect the page contents.
     writer.setPdfVersion(QPdfWriter.PdfVersion.PdfVersion_1_4)
-    pdf_title = pdf_stem
-    writer.setTitle(pdf_title)
+    writer.setTitle(pdf_path.stem)
     writer.setResolution(72)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))
     writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Point)
