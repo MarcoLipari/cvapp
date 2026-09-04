@@ -4,7 +4,14 @@ import unittest
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtPdf import QPdfDocument
 
-from cv_export import CVOverflowError, _inline, export_cv, render_markdown
+from cv_export import (
+    CVExportMetrics,
+    CVOverflowError,
+    _inline,
+    _largest_fitting_density,
+    export_cv,
+    render_markdown,
+)
 from database import CV
 
 
@@ -34,6 +41,17 @@ class CVExportTests(unittest.TestCase):
 
     def test_plain_text_is_not_replaced_with_a_hardcoded_link(self):
         self.assertEqual(_inline("Integrated OpenLineage and Marquez"), "Integrated OpenLineage and Marquez")
+
+    def test_shrink_uses_the_largest_density_that_fits(self):
+        density = _largest_fitting_density(
+            lambda candidate: candidate * 1000,
+            minimum=0.1,
+            maximum=0.75,
+            available_height=623.456,
+        )
+
+        self.assertLessEqual(density * 1000, 623.456)
+        self.assertLess(623.456 - density * 1000, 0.01)
 
     def test_adjacent_reusable_entries_share_one_cv_section_heading(self):
         cv = CV(
@@ -186,9 +204,16 @@ class CVExportTests(unittest.TestCase):
             )
             self.assertIn("Delivered measurable result number 49.", extracted)
 
-            _, pdf_path = export_cv(cv, directory, shrink_to_fit=True)
+            metrics = CVExportMetrics()
+            _, pdf_path = export_cv(
+                cv,
+                directory,
+                shrink_to_fit=True,
+                metrics=metrics,
+            )
             self.assertEqual(document.load(str(pdf_path)), QPdfDocument.Error.None_)
             self.assertEqual(document.pageCount(), 1)
+            self.assertLess(metrics.body_font_size, 11.0)
             self.assertIn(
                 "Delivered measurable result number 49.",
                 document.getAllText(0).text(),

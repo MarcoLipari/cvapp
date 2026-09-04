@@ -21,7 +21,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from cv_export import CVOverflowError, export_cv, export_stem, pdf_filename, render_markdown
+from cv_export import (
+    CVExportMetrics,
+    CVOverflowError,
+    export_cv,
+    export_stem,
+    pdf_filename,
+    render_markdown,
+)
 from cv_document_editor import CVDocumentDialog
 from cv_importer import ImportResult, import_cv
 from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
@@ -2325,7 +2332,20 @@ class MainWindow(QMainWindow):
             dialog.addButton(QMessageBox.StandardButton.Cancel)
             dialog.exec()
             if dialog.clickedButton() is shrink_button:
-                return export_cv(cv, output_dir, shrink_to_fit=True)
+                metrics = CVExportMetrics()
+                exported = export_cv(
+                    cv,
+                    output_dir,
+                    shrink_to_fit=True,
+                    metrics=metrics,
+                )
+                QMessageBox.information(
+                    self,
+                    "CV shrunk to one page",
+                    f"Final body font size: {metrics.body_font_size:.1f} pt\n"
+                    "Recommended body font size for standard CVs: 10-12 pt.",
+                )
+                return exported
             if dialog.clickedButton() is multipage_button:
                 return export_cv(cv, output_dir, allow_multipage=True)
             return None

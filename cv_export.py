@@ -4,6 +4,8 @@ from __future__ import annotations
 import html
 import re
 from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from database import CV, DEFAULT_PROFILE
@@ -11,6 +13,37 @@ from database import CV, DEFAULT_PROFILE
 
 class CVOverflowError(ValueError):
     """Raised when a CV needs more than one page at the reference sizes."""
+
+
+@dataclass
+class CVExportMetrics:
+    """Measurements from the final rendered CV layout."""
+
+    body_font_size: float = 11.0
+
+
+def _largest_fitting_density(
+    layout_height: Callable[[float], float],
+    *,
+    minimum: float,
+    maximum: float,
+    available_height: float,
+    precision: float = 0.00001,
+) -> float:
+    """Return the largest density whose measured layout fits on the page."""
+    if layout_height(minimum) > available_height:
+        raise ValueError("This CV has too much content to shrink onto one page")
+    if layout_height(maximum) <= available_height:
+        return maximum
+
+    low, high = minimum, maximum
+    while high - low > precision:
+        candidate = (low + high) / 2
+        if layout_height(candidate) <= available_height:
+            low = candidate
+        else:
+            high = candidate
+    return low
 
 
 def export_stem(cv: CV) -> str:
@@ -84,6 +117,7 @@ def export_cv(
     *,
     allow_multipage: bool = False,
     shrink_to_fit: bool = False,
+    metrics: CVExportMetrics | None = None,
 ) -> tuple[Path, Path]:
     from PySide6.QtCore import QMarginsF
     from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QPainter
@@ -109,13 +143,15 @@ def export_cv(
     writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Point)
     painter = QPainter(writer)
     try:
-        _draw_reference_layout(
+        body_font_size = _draw_reference_layout(
             painter,
             markdown,
             profile,
             allow_multipage=allow_multipage,
             shrink_to_fit=shrink_to_fit,
         )
+        if metrics is not None:
+            metrics.body_font_size = body_font_size
         painter.end()
         if not pending_pdf_path.exists():
             raise RuntimeError("Qt did not create the PDF")
@@ -187,15 +223,16 @@ def _draw_reference_layout(
     *,
     allow_multipage: bool = False,
     shrink_to_fit: bool = False,
-) -> None:
+) -> float:
     """Draw a CV with the measured typography and spacing of the reference PDF."""
     from PySide6.QtCore import QPointF, QRectF, Qt
     from PySide6.QtGui import QFont, QFontMetricsF, QTextDocument
 
     page_width, page_height = 612.0, 792.0  # US Letter at the writer's 72dpi resolution.
     # Measured from the reference CV (all values are PDF points).
-    left, right, top, bottom = 35.76, 37.92, 10.0, 17.0
-    content_width = page_width - left - right
+    reference_density = 0.75
+    reference_left, reference_right = 35.76, 37.92
+    reference_top, reference_bottom = 10.0, 17.0
 
     def document(fragment: str, size: float, width: float, body_leading: bool = True) -> QTextDocument:
         doc = QTextDocument()
@@ -232,6 +269,15 @@ def _draw_reference_layout(
         return font
 
     def layout(density: float, draw: bool = False, paginate: bool = False) -> float:
+        # Shrink all of the formatting together. Keeping the reference margins
+        # while reducing only the type wastes printable space and forces a
+        # smaller font than a proportionally scaled layout needs.
+        scale = density / reference_density
+        left = reference_left * scale
+        right = reference_right * scale
+        top = reference_top * scale
+        bottom = reference_bottom * scale
+        content_width = page_width - left - right
         body = 11.00 * density
         y = top
 
@@ -337,21 +383,23 @@ def _draw_reference_layout(
 
     # Qt lays out HTML point sizes at 96 dpi while the PDF uses 72 dpi. This
     # fixed density reproduces the source document's physical type sizes
-    # (24 pt name, 10 pt contact, 12 pt headings, 11 pt body). Never shrink
-    # an overfull CV, because that would make formatting vary between exports.
-    reference_density = 0.75
+    # (24 pt name, 10 pt contact, 12 pt headings, 11 pt body). Only the
+    # explicit shrink-to-fit path varies those reference sizes.
     density = reference_density
-    overflows = layout(reference_density) > page_height - bottom
+    reference_available_height = page_height - reference_bottom
+    overflows = layout(reference_density) > reference_available_height
     if overflows and shrink_to_fit:
-        low, high = 0.1, reference_density
-        if layout(low) > page_height - bottom:
-            raise ValueError("This CV has too much content to shrink onto one page")
-        for _ in range(12):
-            candidate = (low + high) / 2
-            if layout(candidate) <= page_height - bottom:
-                density, low = candidate, candidate
-            else:
-                high = candidate
+        # The bottom margin shrinks with the rest of the layout, so include its
+        # density-dependent size in the measured height during the search.
+        density = _largest_fitting_density(
+            lambda candidate: (
+                layout(candidate)
+                + reference_bottom * candidate / reference_density
+            ),
+            minimum=0.1,
+            maximum=reference_density,
+            available_height=page_height,
+        )
     elif overflows and not allow_multipage:
         raise CVOverflowError(
             "This CV cannot fit on one page at the standard reference sizes."
@@ -359,3 +407,4 @@ def _draw_reference_layout(
     painter.fillRect(QRectF(0, 0, page_width, page_height), Qt.GlobalColor.white)
     painter.setPen(Qt.GlobalColor.black)
     layout(density, draw=True, paginate=allow_multipage)
+    return 11.0 * density / reference_density

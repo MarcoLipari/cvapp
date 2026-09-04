@@ -1,11 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from PySide6.QtWidgets import QMessageBox, QTreeWidgetItem
 
-from cv_export import CVOverflowError
+from cv_export import CVExportMetrics, CVOverflowError
 from database import CV, CVDatabase, CVHistory
 from main import MainWindow, TREE_DATA_ROLE, TREE_EDIT_MODE_ROLE, TREE_KIND_ROLE, is_bullet_item
 
@@ -80,7 +80,20 @@ class CVTreeTests(unittest.TestCase):
 
         self.assertEqual(result, expected)
         self.assertEqual(exporter.call_count, 2)
-        exporter.assert_called_with(cv, Path("exports"), shrink_to_fit=True)
+        exporter.assert_called_with(
+            cv,
+            Path("exports"),
+            shrink_to_fit=True,
+            metrics=ANY,
+        )
+        metrics = exporter.call_args.kwargs["metrics"]
+        self.assertIsInstance(metrics, CVExportMetrics)
+        message_box.information.assert_called_once_with(
+            None,
+            "CV shrunk to one page",
+            "Final body font size: 11.0 pt\n"
+            "Recommended body font size for standard CVs: 10-12 pt.",
+        )
 
     def test_groups_entry_bullets_and_preserves_section_content(self):
         content = (
