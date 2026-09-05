@@ -1,4 +1,4 @@
-The app I made to help me easily and quickly create, format and tailor cvs/resumes when I apply to jobs:
+The app I made to help me easily and quickly create, format and tailor cvs/resumes when I apply to jobs. Here's an AI generated README:
 
 # CV Manager
 
