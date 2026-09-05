@@ -1,3 +1,5 @@
+The app I made to help me easily and quickly create, format and tailor cvs/resumes when I apply to jobs:
+
 # CV Manager
 
 A local macOS desktop app for tracking job applications and building tailored CV snapshots.
