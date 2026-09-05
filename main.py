@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import csv
+import difflib
+from html import escape
 import json
 import logging
 import platform
@@ -18,7 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
     QFileDialog, QPlainTextEdit, QStackedWidget, QTableWidget, QTableWidgetItem,
     QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QTextEdit,
 )
 
 from cv_export import (
@@ -29,7 +31,9 @@ from cv_export import (
     pdf_filename,
     render_markdown,
 )
-from cv_document_editor import CVDocumentDialog
+from entry_consolidation import ConsolidationDialog, matching_groups
+from cv_tailoring import BulletSelectionDialog, is_tailored, tailoring_snapshot
+from cv_document_editor import CVDocumentDialog, sections_markdown
 from cv_importer import ImportResult, import_cv
 from database import Application, CV, CVDatabase, CVHistory, DEFAULT_PROFILE, STATUSES, Section, SectionHistory
 from safari_bridge_store import SafariBridgeStore
@@ -549,40 +553,57 @@ class ApplicationDialog(QDialog):
 
 
 class CVDialog(QDialog):
-    def __init__(self, sections: list[Section], profile: dict[str, str], cv=None, parent=None):
+    def __init__(self, sections: list[Section], profile: dict[str, str], cv=None, parent=None, tailoring=False):
         super().__init__(parent)
-        self.setWindowTitle("Edit CV" if cv else "Build tailored CV")
-        self.resize(840, 540)
+        self.tailoring = tailoring or bool(cv and cv.tailoring)
+        self._starting_sections = cv.sections if cv else []
+        if cv and cv.tailoring and not tailoring:
+            self._starting_sections = cv.tailoring.get("sections", cv.sections)
+        self.setWindowTitle("Tailor for a job" if tailoring else "Edit CV" if cv else "Build tailored CV")
+        self.resize(1150, 700)
         outer = QVBoxLayout(self)
         explanation = (
             "Change the name, entries, or order. Editing an entry here stops future library updates from changing it."
             if cv else f"Choose reusable entries for {profile['name']}. Entries with the same heading stay together as one CV section."
         )
+        if tailoring:
+            explanation = f"Start from {cv.name}. Changes stay in this new variation; the original is preserved."
         outer.addWidget(title(self.windowTitle(), explanation))
         form = QFormLayout(); self.name = QLineEdit(cv.name if cv else ""); self.name.setPlaceholderText("e.g. Product data role - Acme"); form.addRow("Internal CV name", self.name)
         self.keywords = QLineEdit(cv.keywords if cv else "")
         self.keywords.setPlaceholderText("e.g. backend, Python, platform engineering")
-        form.addRow("Job keywords", self.keywords); outer.addLayout(form)
+        form.addRow("Job keywords", self.keywords)
+        if tailoring:
+            self.company = QLineEdit(); self.role = QLineEdit()
+            self.company.setPlaceholderText("Company"); self.role.setPlaceholderText("Role")
+            form.addRow("Company", self.company); form.addRow("Role", self.role)
+            self.name.setText(f"{cv.name} — variation")
+            self.posting = QPlainTextEdit(); self.posting.setMaximumHeight(75)
+            self.posting.setPlaceholderText("Optional job description or posting URL")
+            form.addRow("Job posting", self.posting)
+            self.company.textChanged.connect(self.update_variation_name)
+            self.role.textChanged.connect(self.update_variation_name)
+        outer.addLayout(form)
         body = QHBoxLayout(); outer.addLayout(body, 1)
-        self.available = QListWidget(); self.available.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.available = QListWidget(); self.available.setWordWrap(True); self.available.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         for section in sections:
             labels = f"  ·  {section.labels}" if section.labels else ""
             item = QListWidgetItem(
                 f"{section.internal_name}  →  {section.title}{labels}"
             )
             item.setData(Qt.ItemDataRole.UserRole, section); self.available.addItem(item)
-        self.selected = QListWidget()
+        self.selected = QListWidget(); self.selected.setWordWrap(True)
         if cv:
             library_sections = {section.id: section for section in sections}
             for section in cv.sections:
-                source = library_sections.get(section.get("source_section_id"))
+                source = library_sections.get(section.get("source_section_id", section.get("tailoring_source_id")))
                 entry_name = source.internal_name if source else "Customized entry"
                 item = QListWidgetItem(f"{entry_name}  →  {section.get('title', 'Untitled')}")
-                item.setData(Qt.ItemDataRole.UserRole, dict(section))
+                item.setData(Qt.ItemDataRole.UserRole, tailoring_snapshot(section, cv.name) if tailoring else dict(section))
                 self.selected.addItem(item)
         self.selected.itemDoubleClicked.connect(lambda _: self.edit_selected_section())
         controls = QVBoxLayout()
-        for text, action in [("Add entries →", self.add_sections), ("← Remove", self.remove_sections), ("Edit entry", self.edit_selected_section), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
+        for text, action in [("Add entries →", self.add_sections), ("← Remove", self.remove_sections), ("Edit heading / section", self.edit_selected_section), ("Choose bullets", self.choose_bullets), ("Compare / reset", self.compare_selected), ("Changes only", self.show_changes), ("Move up", lambda: self.move(-1)), ("Move down", lambda: self.move(1))]:
             button = secondary_button(text); button.clicked.connect(action); controls.addWidget(button)
         controls.addStretch()
         self.entry_search = QLineEdit(); self.entry_search.setPlaceholderText("Search entry names, CV sections, or keywords…")
@@ -590,8 +611,124 @@ class CVDialog(QDialog):
         available_panel = QVBoxLayout(); available_panel.addWidget(QLabel("Reusable entries")); available_panel.addWidget(self.entry_search); available_panel.addWidget(self.available, 1)
         selected_panel = QVBoxLayout(); selected_panel.addWidget(QLabel("CV content (in order)")); selected_panel.addWidget(self.selected, 1)
         body.addLayout(available_panel, 1); body.addLayout(controls); body.addLayout(selected_panel, 1)
+        editor_panel = QVBoxLayout()
+        editor_panel.addWidget(QLabel("Wording for this CV (Markdown)"))
+        self.wording = QPlainTextEdit(); self.wording.setEnabled(False)
+        editor_panel.addWidget(self.wording)
+        editor_panel.addWidget(QLabel("CV preview · PDF export determines exact page layout"))
+        self.preview = QTextEdit(); self.preview.setReadOnly(True)
+        editor_panel.addWidget(self.preview)
+        body.addLayout(editor_panel, 2)
+        self._loading_wording = False
+        self._profile = profile
+        self.selected.currentItemChanged.connect(self.show_wording)
+        self.wording.textChanged.connect(self.save_wording)
+        self.refresh_tailoring()
+        if self.selected.count():
+            self.selected.setCurrentRow(0)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); outer.addWidget(buttons)
+
+    def update_variation_name(self):
+        parts = [value.text().strip() for value in (self.company, self.role)]
+        if any(parts):
+            self.name.setText(" — ".join(part for part in parts if part))
+
+    @staticmethod
+    def entry_snapshot(value):
+        return CVDatabase._section_snapshot(value)
+
+    def show_wording(self, current=None, previous=None):
+        self._loading_wording = True
+        self.wording.setEnabled(current is not None)
+        self.wording.setPlainText(self.entry_snapshot(current.data(Qt.ItemDataRole.UserRole))["content"] if current else "")
+        self._loading_wording = False
+
+    def save_wording(self):
+        item = self.selected.currentItem()
+        if self._loading_wording or item is None:
+            return
+        section = self.entry_snapshot(item.data(Qt.ItemDataRole.UserRole))
+        content = self.wording.toPlainText()
+        if content == section["content"]:
+            return
+        if "tailoring_base" not in section:
+            section = tailoring_snapshot(section)
+        section.pop("source_section_id", None)
+        section.pop("tailoring_bullets", None)
+        section["content"] = content
+        item.setData(Qt.ItemDataRole.UserRole, section)
+        self.refresh_tailoring()
+
+    def refresh_tailoring(self):
+        for index in range(self.selected.count()):
+            item = self.selected.item(index)
+            label = item.text().removesuffix(" · Tailored")
+            if is_tailored(self.entry_snapshot(item.data(Qt.ItemDataRole.UserRole))):
+                label += " · Tailored"
+            item.setText(label)
+        cv = CV(0, self.name.text(), "", [self.entry_snapshot(v) for v in self.chosen_sections()], self._profile, None, None)
+        self.preview.setMarkdown(render_markdown(cv).replace(" :: ", " — ").replace("\n", "  \n"))
+
+    def choose_bullets(self):
+        item = self.selected.currentItem()
+        if item is None:
+            return
+        section = self.entry_snapshot(item.data(Qt.ItemDataRole.UserRole))
+        dialog = BulletSelectionDialog(section["content"], self, saved_rows=section.get("tailoring_bullets"))
+        if dialog.exec():
+            self.wording.setPlainText(dialog.content())
+            section = self.entry_snapshot(item.data(Qt.ItemDataRole.UserRole))
+            section["tailoring_bullets"] = dialog.rows()
+            item.setData(Qt.ItemDataRole.UserRole, section)
+
+    def show_changes(self):
+        current = [self.entry_snapshot(value) for value in self.chosen_sections()]
+        changes = []
+        for line in difflib.ndiff(
+            sections_markdown(self._starting_sections).splitlines(),
+            sections_markdown(current).splitlines(),
+        ):
+            if line.startswith(("- ", "+ ")):
+                caption, color = ("Removed", "#991b1b") if line.startswith("- ") else ("Added", "#166534")
+                changes.append(f'<p style="color:{color}"><b>{caption}</b> &nbsp; {escape(line[2:]) or "(blank line)"}</p>')
+        dialog = QDialog(self); dialog.setWindowTitle("Changes only"); dialog.resize(800, 550)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Changes from the starting CV. Moved content appears as removal and addition."))
+        text = QTextEdit(); text.setReadOnly(True)
+        text.setHtml("".join(changes) or "No content changes.")
+        layout.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject); layout.addWidget(buttons)
+        dialog.exec()
+
+    def compare_selected(self):
+        item = self.selected.currentItem()
+        if item is None:
+            return
+        section = self.entry_snapshot(item.data(Qt.ItemDataRole.UserRole))
+        base = section.get("tailoring_base", section)
+        dialog = QDialog(self); dialog.setWindowTitle("Compare wording"); dialog.resize(900, 550)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(f"Starting version: {section.get('tailoring_origin', 'Library entry')}"))
+        body = QHBoxLayout(); layout.addLayout(body)
+        for caption, value in (("Starting wording", base), ("This CV", section)):
+            panel = QVBoxLayout(); panel.addWidget(QLabel(caption))
+            text = QPlainTextEdit(value.get("title", "") + "\n\n" + value.get("content", "")); text.setReadOnly(True)
+            panel.addWidget(text); body.addLayout(panel)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        reset = buttons.addButton("Reset to starting wording", QDialogButtonBox.ButtonRole.ResetRole)
+        reset.setEnabled(is_tailored(section))
+        def restore():
+            section.update(base)
+            section.pop("tailoring_bullets", None)
+            item.setData(Qt.ItemDataRole.UserRole, section)
+            self.show_wording(item)
+            self.refresh_tailoring()
+            dialog.accept()
+        reset.clicked.connect(restore)
+        buttons.rejected.connect(dialog.reject); layout.addWidget(buttons)
+        dialog.exec()
 
     def add_sections(self) -> None:
         selected_library_ids = set()
@@ -599,12 +736,14 @@ class CVDialog(QDialog):
             value = self.selected.item(index).data(Qt.ItemDataRole.UserRole)
             if isinstance(value, Section):
                 selected_library_ids.add(value.id)
-            elif value.get("source_section_id") is not None:
-                selected_library_ids.add(value["source_section_id"])
+            else:
+                source_id = value.get("source_section_id", value.get("tailoring_source_id"))
+                if source_id is not None:
+                    selected_library_ids.add(source_id)
         for item in self.available.selectedItems():
             section = item.data(Qt.ItemDataRole.UserRole)
             if section.id not in selected_library_ids:
-                clone = QListWidgetItem(item.text()); clone.setData(Qt.ItemDataRole.UserRole, section); self.selected.addItem(clone)
+                clone = QListWidgetItem(item.text()); clone.setData(Qt.ItemDataRole.UserRole, tailoring_snapshot(self.entry_snapshot(section), "Library entry") if self.tailoring else section); self.selected.addItem(clone)
                 matching_rows = []
                 for row in range(self.selected.count() - 1):
                     selected = self.selected.item(row).data(Qt.ItemDataRole.UserRole)
@@ -615,6 +754,8 @@ class CVDialog(QDialog):
                     self.selected.takeItem(self.selected.row(clone))
                     self.selected.insertItem(matching_rows[-1] + 1, clone)
                 selected_library_ids.add(section.id)
+
+        self.refresh_tailoring()
 
     def filter_available_entries(self, text: str) -> None:
         needle = text.strip().casefold()
@@ -634,6 +775,7 @@ class CVDialog(QDialog):
     def remove_sections(self) -> None:
         for item in self.selected.selectedItems():
             self.selected.takeItem(self.selected.row(item))
+        self.refresh_tailoring()
 
     def edit_selected_section(self) -> None:
         item = self.selected.currentItem()
@@ -650,12 +792,21 @@ class CVDialog(QDialog):
         if dialog.exec():
             section_title, category, content, _ = dialog.values()
             item.setText(f"Customized entry  →  {section_title}")
-            item.setData(Qt.ItemDataRole.UserRole, {"title": section_title, "category": category, "content": content})
+            snapshot = self.entry_snapshot(value)
+            if "tailoring_base" not in snapshot:
+                snapshot = tailoring_snapshot(snapshot)
+            snapshot.pop("source_section_id", None)
+            snapshot.pop("tailoring_bullets", None)
+            snapshot.update(title=section_title, category=category, content=content)
+            item.setData(Qt.ItemDataRole.UserRole, snapshot)
+            self.show_wording(item)
+            self.refresh_tailoring()
 
     def move(self, offset: int) -> None:
         row = self.selected.currentRow(); target = row + offset
         if 0 <= row < self.selected.count() and 0 <= target < self.selected.count():
             item = self.selected.takeItem(row); self.selected.insertItem(target, item); self.selected.setCurrentRow(target)
+            self.refresh_tailoring()
 
     def chosen_sections(self) -> list[Section | dict]:
         return [self.selected.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.selected.count())]
@@ -777,11 +928,25 @@ class MainWindow(QMainWindow):
 
     def cvs_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page); layout.setSpacing(12)
-        header = QHBoxLayout(); header.addWidget(title("Tailored CVs", "Contact details are saved with each CV. Linked library entries update until you customize them.")); header.addStretch(); new = QPushButton("Build CV"); document = secondary_button("Document editor"); edit = secondary_button("Edit CV"); regenerate = secondary_button("Regenerate PDF"); open_pdf = secondary_button("Open PDF"); open_folder = secondary_button("Exports"); delete = secondary_button("Delete"); delete.setProperty("danger", True); new.clicked.connect(self.new_cv); document.clicked.connect(self.edit_cv_document); edit.clicked.connect(self.edit_cv); regenerate.clicked.connect(self.regenerate_selected_cv); open_pdf.clicked.connect(self.open_selected_pdf); open_folder.clicked.connect(self.open_export_folder); delete.clicked.connect(self.delete_cv); [header.addWidget(button) for button in (new, document, edit, regenerate, open_pdf, open_folder, delete)]; layout.addLayout(header)
+        layout.addWidget(title("Tailored CVs", "Create job variations, or edit existing CVs and their linked library entries."))
+        actions = QHBoxLayout()
+        for caption, callback in (
+            ("Build CV", self.new_cv), ("Tailor for a job", self.tailor_cv),
+            ("Document editor", self.edit_cv_document), ("Edit CV", self.edit_cv),
+            ("Regenerate PDF", self.regenerate_selected_cv), ("Open PDF", self.open_selected_pdf),
+            ("Exports", self.open_export_folder), ("Delete", self.delete_cv),
+        ):
+            button = QPushButton(caption) if caption == "Build CV" else secondary_button(caption)
+            if caption == "Delete":
+                button.setProperty("danger", True)
+            button.clicked.connect(callback)
+            actions.addWidget(button)
+        actions.addStretch()
+        layout.addLayout(actions)
         self.cv_table = self.table(["Name", "Job keywords", "Created", "Entries", "PDF export"]); self.cv_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection); self.cv_table.itemDoubleClicked.connect(lambda _: self.edit_cv()); self.cv_table.itemSelectionChanged.connect(self.refresh_cv_details); self.cv_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.cv_table.customContextMenuRequested.connect(self.show_cv_context_menu); layout.addWidget(self.cv_table, 1)
         cv_card, self.cv_detail_labels = self.detail_card([
             ("identity", "Snapshot"), ("keywords", "Best suited for"), ("contact", "Contact details"), ("sections", "Section order"),
-            ("applications", "Linked applications"), ("exports", "Export files"),
+            ("applications", "Linked applications"), ("exports", "Export files"), ("tailoring", "Job variation"),
         ])
         layout.addWidget(cv_card)
         return page
@@ -1191,6 +1356,9 @@ class MainWindow(QMainWindow):
                 section = {"title": item.text(0).strip(), "category": item.text(1).strip() or "Other", "content": content}
                 original = item.data(0, TREE_DATA_ROLE) or {}
                 edit_mode = item.data(0, TREE_EDIT_MODE_ROLE)
+                for key in ("tailoring_base", "tailoring_origin", "tailoring_source_id", "tailoring_bullets"):
+                    if key in original:
+                        section[key] = original[key]
                 if original.get("source_section_id") is not None and edit_mode != "link" and (
                     edit_mode in {"copy", "shared"}
                     or all(section[key] == original.get(key, "") for key in ("title", "category", "content"))
@@ -1283,7 +1451,10 @@ class MainWindow(QMainWindow):
         self.section_heading_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.section_heading_filter.addItem("All CV sections", None)
         self.section_heading_filter.currentIndexChanged.connect(self.apply_section_heading_filter)
-        filters.addWidget(self.section_heading_filter); filters.addStretch(); layout.addLayout(filters)
+        filters.addWidget(self.section_heading_filter); filters.addStretch()
+        consolidate = secondary_button("Consolidate matching titles…")
+        consolidate.clicked.connect(lambda: self.consolidate_library_entries())
+        filters.addWidget(consolidate); layout.addLayout(filters)
         self.section_tree = LibraryTreeWidget()
         self.section_tree.setColumnCount(5)
         self.section_tree.setHeaderLabels(["Entry name / node", "CV section / value", "Category", "Entry keywords", "Words"])
@@ -1511,6 +1682,7 @@ class MainWindow(QMainWindow):
         history = self.previous_versions(self.db.list_cv_history(cv_id))
 
         menu = QMenu(self)
+        menu.addAction("Tailor for a job", self.tailor_cv)
         menu.addAction("Open PDF", self.open_selected_pdf)
         menu.addSeparator()
         history_menu = menu.addMenu("See history")
@@ -1536,6 +1708,7 @@ class MainWindow(QMainWindow):
             None,
             None,
             snapshot.get("keywords", ""),
+            snapshot.get("tailoring", {}),
         )
 
     def open_cv_history_pdf(self, entry: CVHistory) -> None:
@@ -1591,6 +1764,12 @@ class MainWindow(QMainWindow):
             delete_node = menu.addAction(delete_labels[kind])
             delete_node.triggered.connect(lambda: self.delete_library_node(item))
             menu.addSeparator()
+        consolidate = menu.addAction("Consolidate matching titles…")
+        entry_item = item
+        while entry_item.parent() and entry_item.data(0, TREE_KIND_ROLE) != "entry":
+            entry_item = entry_item.parent()
+        preferred = entry_item.text(1) if entry_item.data(0, TREE_KIND_ROLE) == "entry" else ""
+        consolidate.triggered.connect(lambda: self.consolidate_library_entries(preferred))
         duplicate = menu.addAction("Duplicate entry")
         duplicate.triggered.connect(lambda: self.duplicate_library_section(section_id))
         delete = menu.addAction("Delete entry")
@@ -1694,6 +1873,33 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "Created a separate reusable entry; linked CVs still contain both in order.", 6000
         )
+
+    def consolidate_library_entries(self, preferred_title: str = "") -> None:
+        self.commit_active_editor(self._current_page_index)
+        if not self.autosave_library_section():
+            return
+        groups = matching_groups(self.db.list_sections())
+        if not groups:
+            QMessageBox.information(self, "No matching titles", "No repeated role or project titles were found in the Entry Library. Matching ignores dates, Markdown formatting, and spacing.")
+            return
+        dialog = ConsolidationDialog(groups, self, preferred_title)
+        if not dialog.exec():
+            return
+        sources = dialog.selected_sources()
+        section_id = self.db.create_section(
+            dialog.section_title.text().strip(), sources[0].section.category,
+            dialog.content.toPlainText().strip(), dialog.labels.text().strip(),
+            dialog.name.text().strip(),
+        )
+        self.refresh_all()
+        self.section_heading_filter.setCurrentIndex(0)
+        for index in range(self.section_tree.topLevelItemCount()):
+            item = self.section_tree.topLevelItem(index)
+            if item.data(0, TREE_DATA_ROLE) == section_id:
+                self.section_tree.setCurrentItem(item)
+                self.section_tree.scrollToItem(item)
+                break
+        self.statusBar().showMessage(f"Created mega entry from {len(sources)} sources. Original entries and CV links are preserved.", 8000)
 
     def library_bullet_insertion_point(
         self, item: QTreeWidgetItem | None
@@ -1911,6 +2117,15 @@ class MainWindow(QMainWindow):
                 "applications": ", ".join(linked) if linked else "Not linked to an application",
                 "exports": exports or "Not exported yet",
             }
+        if cv and cv.tailoring:
+            context = cv.tailoring
+            values["tailoring"] = "\n".join(filter(None, (
+                f"Based on {context.get('source_cv_name', 'another CV')}",
+                " · ".join(filter(None, (context.get("company"), context.get("role")))),
+                context.get("posting", "")[:500] + ("…" if len(context.get("posting", "")) > 500 else ""),
+            )))
+        else:
+            values["tailoring"] = "—"
         for key, value in values.items(): self.cv_detail_labels[key].setText(value)
 
     def refresh_section_details(self) -> None:
@@ -2371,6 +2586,31 @@ class MainWindow(QMainWindow):
             except Exception as error:
                 QMessageBox.warning(self, "CV saved, export failed", f"The CV snapshot was saved but could not be exported:\n{error}")
             self.refresh_all()
+
+    def tailor_cv(self) -> None:
+        cv = self.selected_cv()
+        if not cv:
+            return
+        dialog = CVDialog(self.db.list_sections(), cv.profile, cv=cv, parent=self, tailoring=True)
+        if not dialog.exec():
+            return
+        variation = self.db.create_cv(
+            dialog.name.text(), dialog.chosen_sections(), cv.profile, keywords=dialog.keywords.text(),
+            tailoring={"source_cv_id": cv.id, "source_cv_name": cv.name, "sections": cv.sections,
+                       "company": dialog.company.text().strip(), "role": dialog.role.text().strip(),
+                       "posting": dialog.posting.toPlainText().strip()},
+        )
+        try:
+            exported = self.export_cv_with_overflow_warning(variation, self.data_dir / "exports")
+            if exported is not None:
+                self.db.update_cv_exports(variation.id, *exported)
+        except Exception as error:
+            QMessageBox.warning(self, "Variation saved, export failed", f"The variation was saved but could not be exported:\n{error}")
+        self.refresh_all()
+        for row in range(self.cv_table.rowCount()):
+            if self.cv_table.item(row, 0).data(Qt.ItemDataRole.UserRole) == variation.id:
+                self.cv_table.selectRow(row)
+                break
 
     def edit_cv(self) -> None:
         cv = self.selected_cv()

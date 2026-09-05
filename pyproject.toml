@@ -2,6 +2,8 @@
 name = "cv-manager"
 version = "0.1.0"
 description = "Local desktop CV and job application manager"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 
 [tool.pyside6-project]
-files = ["main.py", "cv_document_editor.py"]
+files = ["main.py", "cv_document_editor.py", "cv_tailoring.py", "entry_consolidation.py"]

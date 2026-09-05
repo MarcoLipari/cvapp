@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -46,6 +46,7 @@ class CV:
     markdown_path: str | None
     pdf_path: str | None
     keywords: str = ""
+    tailoring: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,8 @@ class CVDatabase:
                 db.execute("ALTER TABLE cvs ADD COLUMN profile_json TEXT NOT NULL DEFAULT '{}'")
             if "keywords" not in columns:
                 db.execute("ALTER TABLE cvs ADD COLUMN keywords TEXT NOT NULL DEFAULT ''")
+            if "tailoring_json" not in columns:
+                db.execute("ALTER TABLE cvs ADD COLUMN tailoring_json TEXT NOT NULL DEFAULT '{}'")
             application_columns = {row["name"] for row in db.execute("PRAGMA table_info(applications)")}
             if "posting_url" not in application_columns:
                 db.execute("ALTER TABLE applications ADD COLUMN posting_url TEXT NOT NULL DEFAULT ''")
@@ -199,7 +202,7 @@ class CVDatabase:
         profile = DEFAULT_PROFILE | json.loads(row["profile_json"] or "{}")
         return CV(
             row["id"], row["name"], row["created_at"], json.loads(row["sections_json"]),
-            profile, row["markdown_path"], row["pdf_path"], row["keywords"],
+            profile, row["markdown_path"], row["pdf_path"], row["keywords"], json.loads(row["tailoring_json"] or "{}"),
         )
 
     @staticmethod
@@ -279,6 +282,7 @@ class CVDatabase:
             "sections": cv.sections,
             "profile": cv.profile,
             "keywords": cv.keywords,
+            "tailoring": cv.tailoring,
         }
         if only_if_changed:
             latest = db.execute(
@@ -478,7 +482,7 @@ class CVDatabase:
                 changed = False
                 for section in sections:
                     linked = section.get("source_section_id") == section_id
-                    legacy_match = "source_section_id" not in section and all(
+                    legacy_match = "source_section_id" not in section and "tailoring_base" not in section and all(
                         section.get(key, "") == source[key]
                         for key in ("title", "category", "content")
                     )
@@ -553,7 +557,7 @@ class CVDatabase:
             changed = False
             for section in sections:
                 linked = section.get("source_section_id") == section_id
-                legacy_match = "source_section_id" not in section and all(
+                legacy_match = "source_section_id" not in section and "tailoring_base" not in section and all(
                     section.get(key, "") == previous[key] for key in ("title", "category", "content")
                 )
                 if linked or legacy_match:
@@ -610,6 +614,7 @@ class CVDatabase:
                     section.get("source_section_id") == section_id
                     or (
                         "source_section_id" not in section
+                        and "tailoring_base" not in section
                         and all(section.get(key, "") == source[key] for key in ("title", "category", "content"))
                     )
                     for section in sections
@@ -662,6 +667,16 @@ class CVDatabase:
         snapshot = {key: str(section.get(key, "")) for key in ("title", "category", "content")}
         if section.get("source_section_id") is not None:
             snapshot["source_section_id"] = int(section["source_section_id"])
+        if isinstance(section.get("tailoring_base"), dict):
+            snapshot["tailoring_base"] = {
+                key: str(section["tailoring_base"].get(key, ""))
+                for key in ("title", "category", "content")
+            }
+            snapshot["tailoring_origin"] = str(section.get("tailoring_origin", "Starting wording"))
+        if section.get("tailoring_source_id") is not None:
+            snapshot["tailoring_source_id"] = int(section["tailoring_source_id"])
+        if isinstance(section.get("tailoring_bullets"), list):
+            snapshot["tailoring_bullets"] = section["tailoring_bullets"]
         return snapshot
 
     def create_cv(
@@ -670,15 +685,16 @@ class CVDatabase:
         sections: list[Section | dict],
         profile: dict[str, str] | None = None,
         keywords: str = "",
+        tailoring: dict | None = None,
     ) -> CV:
         snapshot = [self._section_snapshot(section) for section in sections]
         profile_snapshot = DEFAULT_PROFILE | (profile or self.get_profile())
         with self._connect() as db:
             cv_id = db.execute(
-                "INSERT INTO cvs(name, created_at, sections_json, profile_json, keywords) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO cvs(name, created_at, sections_json, profile_json, keywords, tailoring_json) VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     name, datetime.now().isoformat(timespec="seconds"), json.dumps(snapshot),
-                    json.dumps(profile_snapshot), keywords.strip(),
+                    json.dumps(profile_snapshot), keywords.strip(), json.dumps(tailoring or {}),
                 ),
             ).lastrowid
             self._record_cv_history(db, cv_id, "created")

@@ -4,6 +4,19 @@ The app I made to help me easily and quickly create, format and tailor my cv/res
 
 A local macOS desktop app for tracking job applications and building tailored CV snapshots.
 
+## License
+
+CV Manager is licensed under the GNU General Public License, version 3 or
+(at your option) any later version (`GPL-3.0-or-later`). See [LICENSE](LICENSE)
+for the full license text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+
+Third-party dependencies retain their own licenses. This license applies to
+the application code, not to your personal data or the CVs you create with it.
+
 ## Supported systems
 
 The initial production target is **macOS 13 Ventura or newer on Apple silicon**. Intel Macs and iOS are not supported by the initial release. Release builds should be produced and tested as `arm64`; broader architecture support can be added after a separate Intel build and clean-device test pass are in place.
@@ -40,11 +53,21 @@ Use **Export full backup** in Personal Details to create a portable JSON copy of
 
 Saved CVs can be edited from **Tailored CVs**. Add job keywords such as `backend, Python, platform engineering` to record which roles each version best suits; these appear in the CV list and details but not in the exported résumé. Editing starts with the saved entry content and order, lets you tailor wording without changing the reusable library, add current library entries, and regenerate the Markdown and PDF. Editing an entry's wording inside a CV detaches that block from future library updates. The CV keeps its original contact-detail snapshot.
 
+### Tailor an existing CV for a job
+
+Select a CV in **Tailored CVs** and choose **Tailor for a job** (also available by right-clicking). Enter a company and role to suggest a variation name, add job keywords, and optionally save the posting text or URL. Saving creates a separate CV with the same starting content and ordering. Cancelling leaves the original untouched. Job context is shown in the CV details and excluded from exports.
+
+Select an entry to edit its wording directly, with a live approximate CV preview. **Choose bullets** lets you filter wording, omit individual bullets, edit their text, and move bullets within a group. Saved unchecked bullets remain available when you reopen the selector; changing the entry directly in another editor rebuilds that selector from the edited text. Headings and other context stay attached. **Compare / reset** shows an entry's starting wording beside this CV and can restore it; **Changes only** shows content additions, removals, edits, and moves against the starting CV. Modified entries are marked **Tailored**.
+
+Variations are independent snapshots: library changes never overwrite them, even when their wording is still identical. Starting wording and job context survive saves, history, and full backups. Existing CVs keep their previous linking behavior; directly tailoring an entry through Edit CV protects that entry. Link the exported variation to its application using the application's **CV used** field. Reusable wording alternatives and automatic job matching are not included yet.
+
 Use **Document editor** for a page-like editing view of a saved CV. The Document View approximates the final typography and supports undo, redo, bold, italic, and bullet editing; **Markdown Source** exposes the same section content directly. These text edits preserve every existing Entry Library link. Repeated adjacent headings in the editor keep linked-entry boundaries explicit but are still grouped into one heading in the final output. Use Edit CV or Tree View to add or remove entries, and Personal Details to change the header. Saving passes the edited content through the existing PDF exporter, which remains authoritative for exact layout and page overflow, then refreshes the PDF available to the Safari extension.
 
 Use **Tree View** when you want to customize the whole saved snapshot in one place. The CV is the root; personal details and entries sit beneath it; and each entry owns its lines and bullet points. Reordering whole entries changes only that CV and preserves their library links. Right-click any row inside a CV-specific entry and choose **Move to linked entries** to add it to the Entry Library and link the current CV when saved. Changes save and export when you leave Tree View, select another CV, or choose **Save & export**. For each linked entry whose heading, category, or content changed, the save flow asks you to **Create entry copy**—adding a reusable `CV name | entry name` copy to Entry Library and linking this CV to it—or **Edit shared entry (updates N CVs)** to update the original and every CV that still links to it. **Cancel** stops the save and keeps your unsaved tree edits in place.
 
 In **Entry Library**, use the **CV section** menu to show all entries or only entries for a selected exported heading, such as Skills or Projects. When one imported library item contains multiple roles or projects, right-click the item or one of its sub-entries and choose **Split into separate entries**; linked CVs keep both new entries together in the same order. Right-click a sub-entry to delete it, or right-click a content row to add or delete a bullet or line. Right-click a bullet to move it up or down, or drag it to another position among the bullets in the same group.
+
+Use **Consolidate matching titles…** in Entry Library (or right-click a role/project) to create a new mega entry from repeated titles. Matching uses the role/project title before the `::` date column and ignores Markdown styling, capitalization, extra spaces, and HTML entities such as `&#x20;`. It also finds matching roles inside library entries that contain multiple roles. Choose a title group, review or uncheck source versions, then edit the new entry's name, keywords, and combined Markdown before choosing **Create mega entry**. The draft keeps the first selected title/date line, combines keywords and distinct organization details, and includes each duplicate bullet only once while retaining differently worded bullets. Review the dates and company details, especially when the same title was held at different employers. Original entries, their histories, and all existing CV links are preserved. The new mega entry can then be used with **Choose bullets** while tailoring a CV.
 
 Each Entry Library item has an internal library name and a separate CV section heading. Renaming the internal name keeps every CV link and does not change exported CVs. Inline edits are autosaved, including before duplicating an entry. Leaving Entry Library records the editing session as one history version, updates every linked CV, and regenerates their Markdown and PDF exports. If updated content no longer fits legibly on one page, the CV remains updated and the app reports which export needs attention.
 
