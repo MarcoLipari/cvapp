@@ -43,6 +43,10 @@
 		C7D2B45F303FB4AD0083723B /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B451303FB4AD0083723B /* manifest.json */; };
 		C7D2B460303FB4AD0083723B /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B452303FB4AD0083723B /* popup.css */; };
 		C7D2B461303FB4AD0083723B /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C7D2B453303FB4AD0083723B /* content.js */; };
+		A31E9A010000000000000001 /* toolbar-32.png in Resources */ = {isa = PBXBuildFile; fileRef = A31E9A010000000000000003 /* toolbar-32.png */; };
+		A31E9A010000000000000002 /* toolbar-64.png in Resources */ = {isa = PBXBuildFile; fileRef = A31E9A010000000000000004 /* toolbar-64.png */; };
+		A31E9A010000000000000005 /* toolbar-32.png in Resources */ = {isa = PBXBuildFile; fileRef = A31E9A010000000000000003 /* toolbar-32.png */; };
+		A31E9A010000000000000006 /* toolbar-64.png in Resources */ = {isa = PBXBuildFile; fileRef = A31E9A010000000000000004 /* toolbar-64.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -118,6 +122,8 @@
 		C7D2B451303FB4AD0083723B /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = "../../../../safari-extension/manifest.json"; sourceTree = "<group>"; };
 		C7D2B452303FB4AD0083723B /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; name = popup.css; path = "../../../../safari-extension/popup.css"; sourceTree = "<group>"; };
 		C7D2B453303FB4AD0083723B /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = content.js; path = "../../../../safari-extension/content.js"; sourceTree = "<group>"; };
+		A31E9A010000000000000003 /* toolbar-32.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "toolbar-32.png"; path = "../../../../safari-extension/toolbar-32.png"; sourceTree = "<group>"; };
+		A31E9A010000000000000004 /* toolbar-64.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "toolbar-64.png"; path = "../../../../safari-extension/toolbar-64.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -256,6 +262,8 @@
 				C7D2B451303FB4AD0083723B /* manifest.json */,
 				C7D2B452303FB4AD0083723B /* popup.css */,
 				C7D2B453303FB4AD0083723B /* content.js */,
+				A31E9A010000000000000003 /* toolbar-32.png */,
+				A31E9A010000000000000004 /* toolbar-64.png */,
 			);
 			name = Resources;
 			path = "Shared (Extension)";
@@ -429,6 +437,8 @@
 				C7D2B45D303FB4AD0083723B /* background.js in Resources */,
 				C7D2B461303FB4AD0083723B /* content.js in Resources */,
 				C7D2B45C303FB4AD0083723B /* content.css in Resources */,
+				A31E9A010000000000000005 /* toolbar-32.png in Resources */,
+				A31E9A010000000000000006 /* toolbar-64.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -443,6 +453,8 @@
 				C7D2B456303FB4AD0083723B /* background.js in Resources */,
 				C7D2B45A303FB4AD0083723B /* content.js in Resources */,
 				C7D2B455303FB4AD0083723B /* content.css in Resources */,
+				A31E9A010000000000000001 /* toolbar-32.png in Resources */,
+				A31E9A010000000000000002 /* toolbar-64.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

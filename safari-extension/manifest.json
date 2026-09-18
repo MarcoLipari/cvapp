@@ -5,6 +5,10 @@
   "description": "Send the current job posting to CV Manager on this Mac.",
   "action": {
     "default_title": "Capture job application",
+    "default_icon": {
+      "32": "toolbar-32.png",
+      "64": "toolbar-64.png"
+    },
     "default_popup": "popup.html"
   },
   "background": {

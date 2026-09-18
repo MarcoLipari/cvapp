@@ -1,15 +1,15 @@
 # Native Safari host
 
-The files in this directory replace the generated native portion of a Safari Web Extension project. Full Xcode is required; Apple Command Line Tools alone do not include the converter or Safari extension SDK.
+Full Xcode is required; Apple Command Line Tools alone do not include the Safari extension SDK.
 
-## Create the host project
+## Run on macOS
 
-1. In Xcode, create a macOS Safari Web Extension App, or run Apple's Safari Web Extension converter against `../safari-extension`.
-2. Use `com.cvmanager.app.safari` for the containing app bundle identifier and a child identifier for the extension target.
-3. Replace the generated extension resources with the contents of `../safari-extension`.
-4. Replace the generated `SafariWebExtensionHandler.swift` with the file in this directory and include it only in the native extension target.
-5. Assign `CVManagerSafari.entitlements` to the app target and `CVManagerSafariExtension.entitlements` to the extension target.
-6. Register `group.com.cvmanager.app` in the signing team and enable that App Group on both targets.
-7. Build and run the containing app once, then enable the extension in **Safari → Settings → Extensions** and grant website access.
+1. Open `generated/CV Manager Safari/CV Manager Safari.xcodeproj` in Xcode.
+2. Select the **CV Manager Safari (macOS)** scheme. Configure signing for both macOS targets with a team that has the `group.com.cvmanager.app` App Group.
+3. Build and run the containing app once. The project references the web resources in `../safari-extension`, so rebuild after changing them.
+4. In **Safari → Settings → Extensions**, enable **CV Manager Capture** and grant website access.
+5. If the extension is enabled but its toolbar button is missing for a local development build, turn on **Safari → Settings → Developer → Allow unsigned extensions**, then uncheck and recheck **CV Manager Capture** in Extensions settings. Safari resets the developer setting when it quits, so repeat this after restarting Safari if needed.
+
+The repository also contains standalone Swift handler and entitlement files for creating another host project. The checked-in Xcode project already includes them.
 
 For production packaging, sign the CV Manager desktop app with access to the same App Group. During local Python development, the app uses the corresponding folder in `~/Library/Group Containers`. Set `CV_MANAGER_SAFARI_BRIDGE_DIR` to an alternate directory for isolated development or tests.
